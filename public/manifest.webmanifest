@@ -1,0 +1,16 @@
+{
+  "name": "Masan Accounting",
+  "short_name": "Masan",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#1f7a8c",
+  "background_color": "#f8f4ef",
+  "icons": [
+    {
+      "src": "/icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

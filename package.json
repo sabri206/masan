@@ -1,0 +1,16 @@
+{
+  "name": "masan-accounting",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "sh -c 'PORT=${PORT:-3000}; PIDS=$(lsof -tiTCP:$PORT -sTCP:LISTEN 2>/dev/null || true); if [ -n \"$PIDS\" ]; then for PID in $PIDS; do echo Releasing-port-$PORT-PID-$PID; kill $PID 2>/dev/null || true; done; sleep 1; fi; node server.js'"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0"
+  }
+}

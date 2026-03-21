@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Masan Accounting</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#1f7a8c" />
+    <link rel="apple-touch-icon" href="/icons/app-icon.svg" />
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="auth-only">
+    <div class="app-shell">
+      <header class="app-header">
+        <div>
+          <h1>masan.co</h1>
+          <p>Integrated Accounting Suite</p>
+        </div>
+        <div class="header-actions">
+          <button class="secondary" id="lite-mode-toggle">وضع خفيف</button>
+          <button class="secondary" id="force-refresh-btn" hidden>تحديث إجباري</button>
+          <select id="theme-select" aria-label="تغيير القالب">
+            <option value="warm">القالب: دافئ</option>
+            <option value="ocean">القالب: محيطي</option>
+            <option value="mono">القالب: حيادي</option>
+          </select>
+          <button class="secondary" id="install-app" hidden>تثبيت التطبيق</button>
+          <button class="secondary" id="logout-btn" hidden>تسجيل خروج</button>
+          <div class="status-pill" id="status-pill">جاهز / Ready</div>
+        </div>
+      </header>
+
+      <nav class="main-nav">
+        <button class="nav-btn" data-screen="dashboard">لوحة المؤشرات</button>
+        <button class="nav-btn active" data-screen="customers-add">إضافة زبائن</button>
+        <button class="nav-btn" data-screen="customers-list">بيانات الزبائن</button>
+        <button class="nav-btn" data-screen="customer-timeline">سجل نشاط الزبون</button>
+        <button class="nav-btn" data-screen="receipts">وصولات</button>
+        <button class="nav-btn" data-screen="invoice-builder">فاتورة</button>
+        <button class="nav-btn" data-screen="transfers">تحويلات</button>
+        <button class="nav-btn" data-screen="rmb-balance">رصيد رممبي</button>
+        <button class="nav-btn" data-screen="ledger">قاعدة بيانات وحركات الزبائن</button>
+        <button class="nav-btn" data-screen="reports">تقرير زبائن</button>
+        <button class="nav-btn" data-screen="backup">نسخ احتياطي</button>
+        <button class="nav-btn" data-screen="ops">التشغيل والإدارة</button>
+      </nav>
+
+      <main class="screen-area">
+        <section class="screen" id="dashboard">
+          <h2>لوحة المؤشرات</h2>
+          <div class="form-card" id="ops-alerts-card">
+            <div class="form-actions">
+              <button class="primary" id="dashboard-refresh">تحديث المؤشرات</button>
+            </div>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="dashboard-receivables">إجمالي (مدينين)</label>
+                <input type="text" id="dashboard-receivables" readonly />
+              </div>
+              <div class="form-row">
+                <label for="dashboard-payables">إجمالي (أنا مطلوب)</label>
+                <input type="text" id="dashboard-payables" readonly />
+              </div>
+              <div class="form-row">
+                <label for="dashboard-transport">إجمالي النقل</label>
+                <input type="text" id="dashboard-transport" readonly />
+              </div>
+              <div class="form-row">
+                <label for="dashboard-movement-today">حركة اليوم</label>
+                <input type="text" id="dashboard-movement-today" readonly />
+              </div>
+            </div>
+          </div>
+
+          <div class="form-card dashboard-net-card">
+            <h3>بطاقة المقاصة اليدوية</h3>
+            <div class="dashboard-net-grid">
+              <div class="dashboard-net-column form-row">
+                <label class="dashboard-net-heading" for="dashboard-net-debtors">اختر زبائن مدينين</label>
+                <div class="dashboard-net-actions">
+                  <button class="secondary" type="button" id="dashboard-net-debtors-select-all">تحديد الكل</button>
+                  <button class="secondary" type="button" id="dashboard-net-debtors-clear">إلغاء الكل</button>
+                </div>
+                <select id="dashboard-net-debtors" multiple size="8"></select>
+              </div>
+
+              <div class="dashboard-net-column form-row">
+                <label class="dashboard-net-heading" for="dashboard-net-payables">اختر زبائن (أنا مطلوب لهم)</label>
+                <div class="dashboard-net-actions">
+                  <button class="secondary" type="button" id="dashboard-net-payables-select-all">تحديد الكل</button>
+                  <button class="secondary" type="button" id="dashboard-net-payables-clear">إلغاء الكل</button>
+                </div>
+                <select id="dashboard-net-payables" multiple size="8"></select>
+              </div>
+            </div>
+
+            <div class="dashboard-net-summary">
+              <div class="dashboard-net-stat form-row">
+                <label for="dashboard-net-debtors-total">مجموع المدينين المختارين</label>
+                <input type="text" id="dashboard-net-debtors-total" readonly />
+              </div>
+              <div class="dashboard-net-stat form-row">
+                <label for="dashboard-net-payables-total">مجموع أنا مطلوب المختار</label>
+                <input type="text" id="dashboard-net-payables-total" readonly />
+              </div>
+              <div class="dashboard-net-stat dashboard-net-stat-final form-row">
+                <label for="dashboard-net-final">الرصيد النهائي (أنا مطلوب - مدينين)</label>
+                <input type="text" id="dashboard-net-final" readonly />
+              </div>
+            </div>
+          </div>
+
+          <div class="table-card">
+            <h3> الزبائن مدينين</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>الزبون</th>
+                  <th>الرصيد</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-debtors-table"></tbody>
+            </table>
+          </div>
+
+          <div class="table-card">
+            <h3>تنبيهات (أنا مطلوب) - رصيد سالب</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>الكود</th>
+                  <th>الزبون</th>
+                  <th>الرصيد</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-negative-table"></tbody>
+            </table>
+          </div>
+
+          <div class="table-card">
+            <h3>أولوية التحصيل (الأهم أولاً)</h3>
+            <table class="priority-table">
+              <thead>
+                <tr>
+                  <th>الكود</th>
+                  <th>الزبون</th>
+                  <th>الرصيد</th>
+                  <th>آخر حركة (يوم)</th>
+                  <th>درجة الأولوية</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-priority-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="screen active" id="customers-add">
+          <h2>إضافة زبون جديد</h2>
+          <div class="form-card">
+            <div class="form-row">
+              <label for="customer-code">كود الزبون</label>
+              <input type="text" id="customer-code" readonly />
+            </div>
+            <div class="form-row">
+              <label for="customer-name">اسم الزبون</label>
+              <input type="text" id="customer-name" placeholder="ادخل الاسم" />
+            </div>
+            <div class="form-row">
+              <label for="customer-phone">رقم الهاتف</label>
+              <input type="text" id="customer-phone" placeholder="مثال: 0770..." />
+            </div>
+            <div class="form-row">
+              <label for="customer-address">العنوان</label>
+              <input type="text" id="customer-address" placeholder="المدينة / المنطقة" />
+            </div>
+            <div class="form-row">
+              <label for="customer-initial-balance">الرصيد الابتدائي</label>
+              <input type="number" id="customer-initial-balance" step="0.01" placeholder="0.00" />
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="customer-save">حفظ</button>
+              <button class="secondary" id="customer-reset">تفريغ</button>
+            </div>
+            <div class="inline-message" id="customer-message"></div>
+          </div>
+        </section>
+
+        <section class="screen" id="customers-list">
+          <h2>بيانات الزبائن</h2>
+          <div class="table-card">
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th>الكود</th>
+                  <th>الاسم</th>
+                  <th>الهاتف</th>
+                  <th>العنوان</th>
+                  <th>الرصيد الافتتاحي </th>
+                  <th>الرصيد الحالي</th>
+                  <th>إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="customers-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="screen" id="customer-timeline">
+          <h2>سجل نشاط الزبون (Timeline)</h2>
+          <div class="form-card">
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="timeline-customer">الزبون</label>
+                <select id="timeline-customer"></select>
+              </div>
+              <div class="form-row">
+                <label for="timeline-limit">عدد السجلات</label>
+                <input type="number" id="timeline-limit" value="200" min="10" max="1000" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="timeline-load">تحميل السجل</button>
+            </div>
+            <div class="inline-message" id="timeline-message"></div>
+          </div>
+
+          <div class="table-card">
+            <table>
+              <thead>
+                <tr>
+                  <th>التاريخ</th>
+                  <th>المصدر</th>
+                  <th>النوع</th>
+                  <th>المرجع</th>
+                  <th>المبلغ</th>
+                  <th>المرسل</th>
+                  <th>المستلم</th>
+                  <th>التفاصيل</th>
+                </tr>
+              </thead>
+              <tbody id="timeline-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="screen" id="receipts">
+          <h2>وصولات</h2>
+          <div class="form-card">
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="receipt-sender">اسم المرسل</label>
+                <select id="receipt-sender"></select>
+              </div>
+              <div class="form-row">
+                <label for="receipt-receiver">اسم المستلم </label>
+                <select id="receipt-receiver"></select>
+              </div>
+              <div class="form-row">
+                <label for="receipt-invoice">رقم الفاتورة</label>
+                <input type="text" id="receipt-invoice" readonly />
+              </div>
+              <div class="form-row">
+                <label for="receipt-date">التاريخ</label>
+                <input type="date" id="receipt-date" />
+              </div>
+              <div class="form-row">
+                <label for="receipt-type">نوع البند</label>
+                <select id="receipt-type">
+                  <option value="قبض">قبض</option>
+                  <option value="دفع">دفع</option>
+                  <option value="مصروفات">مصروفات</option>
+                  <option value="سماح">سماح</option>
+                  <option value="ربح">ربح</option>
+                  <option value="فاتورة">فاتورة</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label for="receipt-amount">مبلغ المرسل</label>
+                <input type="number" id="receipt-amount" step="0.01" placeholder="ادخل مبلغ موجب" />
+              </div>
+              <div class="form-row">
+                <label for="receipt-delivery">تاريخ التسليم</label>
+                <input type="date" id="receipt-delivery" />
+              </div>
+              <div class="form-row">
+                <label for="receipt-details">تفاصيل الاستلام</label>
+                <input type="text" id="receipt-details" placeholder="تفاصيل اضافية" />
+              </div>
+              <div class="form-row">
+                <label for="receipt-attachment-file">مرفق الوصل (PDF / صورة)</label>
+                <input type="file" id="receipt-attachment-file" accept="application/pdf,image/*" />
+                <div class="attachment-actions">
+                  <button class="secondary" type="button" id="receipt-attachment-upload">رفع المرفق</button>
+                  <button class="secondary" type="button" id="receipt-attachment-clear">إزالة المرفق</button>
+                </div>
+                <div class="inline-message" id="receipt-attachment-status"></div>
+              </div>
+            </div>
+            <div class="details-card" id="receipt-party-details"></div>
+            <div class="form-row">
+              <label for="receipt-auto-invoice">
+                <input type="checkbox" id="receipt-auto-invoice" checked />
+                إنشاء الفاتورة تلقائيًا بعد الحفظ
+              </label>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="receipt-save">حفظ</button>
+              <button class="primary" id="receipt-create-invoice">إنشاء فاتورة</button>
+              <button class="secondary" id="receipt-reset">تفريغ</button>
+            </div>
+            <div class="inline-message" id="receipt-message"></div>
+          </div>
+
+          <div class="table-card">
+            <h3>قائمة الوصولات</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>فاتورة</th>
+                  <th>تاريخ</th>
+                  <th>النوع</th>
+                  <th>المبلغ</th>
+                  <th>المرسل</th>
+                  <th>المستلم</th>
+                  <th>إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="receipts-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="screen" id="ledger">
+          <h2>قاعدة بيانات وحركات الزبائن</h2>
+          <div class="form-card">
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="ledger-customer">الزبون</label>
+                <select id="ledger-customer"></select>
+              </div>
+              <div class="form-row">
+                <label for="ledger-from">من تاريخ</label>
+                <input type="date" id="ledger-from" />
+              </div>
+              <div class="form-row">
+                <label for="ledger-to">الى تاريخ</label>
+                <input type="date" id="ledger-to" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="ledger-load">عرض الحركات</button>
+            </div>
+            <div class="balance-strip" id="ledger-balance"></div>
+          </div>
+
+          <div class="table-card">
+            <table>
+              <thead>
+                <tr>
+                  <th>فاتورة</th>
+                  <th>تاريخ</th>
+                  <th>المرسل</th>
+                  <th>المستلم</th>
+                  <th>المبلغ</th>
+                  <th>تفاصيل</th>
+                  <th>الرصيد</th>
+                </tr>
+              </thead>
+              <tbody id="ledger-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="screen" id="transfers">
+          <h2>تحويلات</h2>
+          <div class="form-card">
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="transfer-sender">اسم المرسل</label>
+                <select id="transfer-sender"></select>
+              </div>
+              <div class="form-row">
+                <label for="transfer-receiver">اسم المستلم</label>
+                <select id="transfer-receiver"></select>
+              </div>
+              <div class="form-row">
+                <label for="transfer-date">التاريخ</label>
+                <input type="date" id="transfer-date" />
+              </div>
+              <div class="form-row">
+                <label for="transfer-amount">مبلغ الحوالة</label>
+                <input type="number" id="transfer-amount" step="0.01" placeholder="ادخل المبلغ" />
+              </div>
+              <div class="form-row">
+                <label for="transfer-rate">سعر الصرف</label>
+                <input type="number" id="transfer-rate" step="0.0001" placeholder="مثال 1.00" />
+              </div>
+              <div class="form-row">
+                <label for="transfer-total">قيمة التحويل بعد الصرف</label>
+                <input type="text" id="transfer-total" readonly />
+              </div>
+              <div class="form-row">
+                <label for="transfer-fee">العمولة</label>
+                <input type="number" id="transfer-fee" step="0.01" placeholder="0.00" />
+              </div>
+              <div class="form-row">
+                <label for="transfer-currency-from">من عملة</label>
+                <input type="text" id="transfer-currency-from" value="دولار" />
+              </div>
+              <div class="form-row">
+                <label for="transfer-currency-to">الى عملة</label>
+                <input type="text" id="transfer-currency-to" value="يوان" />
+              </div>
+            </div>
+            <div class="details-card" id="transfer-party-details"></div>
+            <div class="form-actions">
+              <button class="primary" id="transfer-save">حفظ</button>
+              <button class="secondary" id="transfer-reset">تفريغ</button>
+            </div>
+            <div class="inline-message" id="transfer-message"></div>
+          </div>
+
+          <div class="table-card">
+            <h3>سجل التحويلات</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>رقم</th>
+                  <th>التاريخ</th>
+                  <th>المرسل</th>
+                  <th>المستلم</th>
+                  <th>المبلغ</th>
+                  <th>سعر الصرف</th>
+                  <th>العمولة</th>
+                  <th>من</th>
+                  <th>الى</th>
+                  <th>إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="transfers-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="screen" id="invoice-builder">
+          <h2>فاتورة</h2>
+          <div class="form-card">
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="invoice-number">رقم الفاتورة</label>
+                <input type="text" id="invoice-number" readonly />
+              </div>
+              <div class="form-row">
+                <label for="invoice-date">تاريخ الفاتورة</label>
+                <input type="date" id="invoice-date" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-customer">اسم الزبون</label>
+                <select id="invoice-customer"></select>
+              </div>
+              <div class="form-row">
+                <label for="invoice-brand">ماركة</label>
+                <input type="text" id="invoice-brand" placeholder="ادخل الماركة" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-material">مادة</label>
+                <input type="text" id="invoice-material" placeholder="ادخل المادة" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-cartons">كرتون</label>
+                <input type="number" id="invoice-cartons" step="1" min="0" placeholder="0" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-cbm">CBM</label>
+                <input type="number" id="invoice-cbm" step="0.001" min="0" placeholder="0.000" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-rmb-amount">مبلغ رممبي</label>
+                <input type="number" id="invoice-rmb-amount" step="0.01" min="0" placeholder="0.00" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-rmb-converted">تحويل مبلغ رممبي</label>
+                <input type="number" id="invoice-rmb-converted" step="0.01" min="0" placeholder="0.00" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-exchange-rate">سعر صرف</label>
+                <input type="number" id="invoice-exchange-rate" step="0.0001" min="0" placeholder="0.0000" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-usd-amount">مبلغ دولار</label>
+                <input type="text" id="invoice-usd-amount" readonly />
+              </div>
+              <div class="form-row">
+                <label for="invoice-transport-amount">سعر متر</label>
+                <input type="number" id="invoice-transport-amount" step="0.01" min="0" placeholder="0.00" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-transport-total">الاجمالي مبلغ النقل</label>
+                <input type="text" id="invoice-transport-total" readonly />
+              </div>
+              <div class="form-row">
+                <label for="invoice-report-link-mode">طريقة الربط مع تقرير الزبون</label>
+                <select id="invoice-report-link-mode">
+                  <option value="transport">احتساب مبلغ النقل فقط</option>
+                  <option value="final" selected>احتساب الإجمالي النهائي بالدولار</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label for="invoice-spend-rmb">الصرف من رصيد الرممبي</label>
+                <select id="invoice-spend-rmb">
+                  <option value="no" selected>لا</option>
+                  <option value="yes">نعم</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label for="invoice-details">التفاصيل</label>
+                <input type="text" id="invoice-details" placeholder="تفاصيل اضافية" />
+              </div>
+              <div class="form-row">
+                <label for="invoice-attachment-file">مرفق الفاتورة (PDF / صورة)</label>
+                <input type="file" id="invoice-attachment-file" accept="application/pdf,image/*" />
+                <div class="attachment-actions">
+                  <button class="secondary" type="button" id="invoice-attachment-upload">رفع المرفق</button>
+                  <button class="secondary" type="button" id="invoice-attachment-clear">إزالة المرفق</button>
+                </div>
+                <div class="inline-message" id="invoice-attachment-status"></div>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="invoice-save">حفظ</button>
+              <button class="primary" id="invoice-print">معاينة وطباعة</button>
+              <button class="secondary" id="invoice-reset">تفريغ</button>
+            </div>
+            <div class="inline-message" id="invoice-message"></div>
+          </div>
+
+          <div class="table-card">
+            <h3>سجل الفواتير المحفوظة</h3>
+            <div class="form-row">
+              <label for="invoice-saved-search">بحث (رقم الفاتورة / اسم الزبون)</label>
+              <input type="text" id="invoice-saved-search" placeholder="اكتب رقم الفاتورة او اسم الزبون" />
+            </div>
+            <div class="gallery-empty" id="invoice-saved-empty">لا توجد فواتير محفوظة بعد.</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>رقم الفاتورة</th>
+                  <th>التاريخ</th>
+                  <th>الزبون</th>
+                  <th>ماركة</th>
+                  <th>مبلغ دولار</th>
+                  <th>الاجمالي مبلغ النقل</th>
+                  <th>الإجمالي النهائي بالدولار</th>
+                  <th>نوع الربط</th>
+                  <th>إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="invoice-saved-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="screen" id="reports">
+          <h2>تقرير الزبائن</h2>
+          <div class="form-card">
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="report-customer">الزبون</label>
+                <select id="report-customer"></select>
+              </div>
+              <div class="form-row">
+                <label for="report-from">من تاريخ</label>
+                <input type="date" id="report-from" />
+              </div>
+              <div class="form-row">
+                <label for="report-to">الى تاريخ</label>
+                <input type="date" id="report-to" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="report-search">بحث</button>
+              <button class="secondary" id="report-save-image">حفظ كشف كصورة</button>
+              <button class="secondary" id="report-export-excel">تصدير Excel</button>
+              <button class="secondary" id="report-export-pdf">تصدير PDF</button>
+              <button class="secondary" id="report-export-statement">كشف حساب PDF</button>
+              <button class="secondary" id="report-quick-daily">تقرير يومي سريع</button>
+              <button class="secondary" id="report-quick-weekly">تقرير أسبوعي سريع</button>
+              <button class="secondary" id="report-monthly-auto">تقرير شهري تلقائي</button>
+            </div>
+            <div class="inline-message" id="report-message"></div>
+          </div>
+
+          <div class="table-card">
+            <table>
+              <thead>
+                <tr>
+                  <th>فاتورة</th>
+                  <th>تاريخ</th>
+                  <th>النوع</th>
+                  <th>المبلغ</th>
+                  <th>المرسل</th>
+                  <th>المستلم</th>
+                  <th>التفاصيل</th>
+                  <th>الرصيد</th>
+                </tr>
+              </thead>
+              <tbody id="report-table"></tbody>
+            </table>
+          </div>
+
+          <div class="table-card" id="report-gallery">
+            <h3>محفوظات كشف الزبون</h3>
+            <div class="gallery-empty" id="report-gallery-empty">لا توجد صور محفوظة بعد.</div>
+            <div class="gallery-grid" id="report-gallery-list"></div>
+          </div>
+        </section>
+
+        <section class="screen" id="rmb-balance">
+          <h2>رصيد رممبي</h2>
+          ssh root@138.197.50.117          <div class="form-card">
+            <div class="form-row">
+              <label for="rmb-currency">عملة الاستلام</label>
+              <input type="text" id="rmb-currency" value="يوان" />
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="rmb-load">عرض الأرصدة</button>
+            </div>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="rmb-incoming">شراء اداع رممبي</label>
+                <input type="text" id="rmb-incoming" readonly />
+              </div>
+              <div class="form-row">
+                <label for="rmb-outgoing">سحب رممبي</label>
+                <input type="text" id="rmb-outgoing" readonly />
+              </div>
+              <div class="form-row">
+                <label for="rmb-total">الرصيد الاجمالي</label>
+                <input type="text" id="rmb-total" readonly />
+              </div>
+            </div>
+          </div>
+
+          <div class="form-card">
+            <h3>حوالات رممبي</h3>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="rmb-transfer-sender">اسم المرسل</label>
+                <select id="rmb-transfer-sender"></select>
+              </div>
+              <div class="form-row">
+                <label for="rmb-transfer-receiver">اسم المستلم</label>
+                <select id="rmb-transfer-receiver"></select>
+              </div>
+              <div class="form-row">
+                <label for="rmb-transfer-date">التاريخ</label>
+                <input type="date" id="rmb-transfer-date" />
+              </div>
+              <div class="form-row">
+                <label for="rmb-transfer-amount">مبلغ رممبي</label>
+                <input type="number" id="rmb-transfer-amount" step="0.01" placeholder="ادخل مبلغ رممبي" />
+              </div>
+              <div class="form-row">
+                <label for="rmb-transfer-rate">سعر الصرف (الى دولار)</label>
+                <input type="number" id="rmb-transfer-rate" step="0.0001" placeholder="مثال 0.14" />
+              </div>
+              <div class="form-row">
+                <label for="rmb-transfer-usd">مبلغ دولار</label>
+                <input type="text" id="rmb-transfer-usd" readonly />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="rmb-transfer-save">حفظ</button>
+              <button class="secondary" id="rmb-transfer-reset">تفريغ</button>
+            </div>
+            <div class="inline-message" id="rmb-transfer-message"></div>
+          </div>
+
+          <div class="table-card">
+            <h3>سجل حوالات رممبي</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>تاريخ</th>
+                  <th>المرسل</th>
+                  <th>المستلم</th>
+                  <th>مبلغ رممبي</th>
+                  <th>سعر الصرف</th>
+                  <th>مبلغ دولار</th>
+                  <th>إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="rmb-transfers-table"></tbody>
+            </table>
+          </div>
+          <div class="table-card">
+            <h3>ايداع رممبي</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>التاريخ</th>
+                  <th>المرسل</th>
+                  <th>المستلم</th>
+                  <th>المبلغ</th>
+                  <th>سعر الصرف</th>
+                  <th>قيمة التحويل بعد الصرف</th>
+                  <th>إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="rmb-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="screen" id="backup">
+          <h2>النسخ الاحتياطي والاسترجاع</h2>
+          <div class="form-card">
+            <p>يمكنك تنزيل نسخة احتياطية كاملة بصيغة JSON ثم استرجاعها عند الحاجة.</p>
+            <div class="form-actions">
+              <button class="primary" id="backup-download">تنزيل نسخة احتياطية</button>
+            </div>
+          </div>
+
+          <div class="form-card">
+            <div class="form-row">
+              <label for="backup-file">ملف النسخة الاحتياطية (JSON)</label>
+              <input type="file" id="backup-file" accept="application/json,.json" />
+            </div>
+            <div class="form-row">
+              <label for="backup-confirm">اكتب RESTORE لتأكيد الاسترجاع</label>
+              <input type="text" id="backup-confirm" placeholder="RESTORE" />
+            </div>
+            <div class="form-actions">
+              <button class="secondary" id="backup-restore">استرجاع النسخة</button>
+            </div>
+            <div class="inline-message" id="backup-message"></div>
+          </div>
+        </section>
+
+        <section class="screen" id="ops">
+          <h2>التشغيل والإدارة</h2>
+
+          <div class="form-card">
+            <h3>
+              مركز التنبيهات الموحد
+              <span class="ops-badge" id="ops-alerts-badge">غير محمل</span>
+            </h3>
+            <div class="ops-overview">
+              <div class="ops-stat-card">
+                <div class="ops-stat-label">إجمالي التنبيهات</div>
+                <div class="ops-stat-value" id="ops-alerts-total">0</div>
+                <div class="ops-stat-note">عدد جميع التنبيهات الحالية</div>
+              </div>
+            </div>
+            <table class="ops-table">
+              <thead>
+                <tr>
+                  <th>النوع</th>
+                  <th>المستوى</th>
+                  <th>العنوان</th>
+                  <th>العدد</th>
+                </tr>
+              </thead>
+              <tbody id="ops-alerts-table"></tbody>
+            </table>
+          </div>
+
+          <div class="ops-overview" id="ops-overview-cards">
+            <div class="ops-stat-card">
+              <div class="ops-stat-label">نسخ السيرفر</div>
+              <div class="ops-stat-value" id="ops-backups-count">0</div>
+              <div class="ops-stat-note">عدد ملفات النسخ اليومية</div>
+            </div>
+            <div class="ops-stat-card">
+              <div class="ops-stat-label">الأيام المقفلة</div>
+              <div class="ops-stat-value" id="ops-locks-count">0</div>
+              <div class="ops-stat-note">التواريخ المقفلة على الحركات</div>
+            </div>
+            <div class="ops-stat-card">
+              <div class="ops-stat-label">سجل التدقيق</div>
+              <div class="ops-stat-value" id="ops-audit-count">0</div>
+              <div class="ops-stat-note">نتائج البحث الحالية</div>
+            </div>
+          </div>
+
+          <div class="form-card" id="ops-backups-card">
+            <h3>
+              النسخ اليومية على السيرفر
+              <span class="ops-badge" id="ops-backups-badge">غير محمل</span>
+            </h3>
+            <div class="form-actions">
+              <button class="primary" id="backup-list-refresh">تحديث قائمة النسخ</button>
+            </div>
+            <table class="ops-table">
+              <thead>
+                <tr>
+                  <th>الملف</th>
+                  <th>الحجم (بايت)</th>
+                  <th>آخر تعديل</th>
+                  <th>إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="backup-list-table"></tbody>
+            </table>
+          </div>
+
+          <div class="form-card" id="ops-locks-card">
+            <h3>
+              قفل يوم الحركات
+              <span class="ops-badge" id="ops-locks-badge">غير محمل</span>
+            </h3>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="lock-date">التاريخ</label>
+                <input type="date" id="lock-date" />
+              </div>
+              <div class="form-row">
+                <label for="lock-reason">السبب</label>
+                <input type="text" id="lock-reason" placeholder="إقفال يومي" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="lock-save">قفل اليوم</button>
+              <button class="secondary" id="lock-refresh">تحديث الأقفال</button>
+            </div>
+            <table class="ops-table">
+              <thead>
+                <tr>
+                  <th>التاريخ</th>
+                  <th>السبب</th>
+                  <th>بواسطة</th>
+                  <th>إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="lock-table"></tbody>
+            </table>
+            <div class="inline-message" id="lock-message"></div>
+          </div>
+
+          <div class="form-card" id="ops-audit-card">
+            <h3>
+              سجل التدقيق
+              <span class="ops-badge" id="ops-audit-badge">غير محمل</span>
+            </h3>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="audit-user">المستخدم</label>
+                <input type="text" id="audit-user" placeholder="admin" />
+              </div>
+              <div class="form-row">
+                <label for="audit-action">العملية</label>
+                <input type="text" id="audit-action" placeholder="create / update / delete" />
+              </div>
+              <div class="form-row">
+                <label for="audit-entity">الكيان</label>
+                <input type="text" id="audit-entity" placeholder="receipt / transfer ..." />
+              </div>
+              <div class="form-row">
+                <label for="audit-details">بحث داخل التفاصيل</label>
+                <input type="text" id="audit-details" placeholder="invoice / amount / reason ..." />
+              </div>
+              <div class="form-row">
+                <label for="audit-from">من تاريخ</label>
+                <input type="date" id="audit-from" />
+              </div>
+              <div class="form-row">
+                <label for="audit-to">الى تاريخ</label>
+                <input type="date" id="audit-to" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="audit-search">بحث السجل</button>
+              <button class="secondary" id="audit-quick-24h">آخر 24 ساعة</button>
+              <button class="secondary" id="audit-quick-7d">آخر 7 أيام</button>
+              <button class="secondary" id="audit-clear-dates">مسح التاريخ</button>
+              <button class="secondary" id="audit-export-excel">تصدير Excel</button>
+            </div>
+            <div class="audit-columns-control">
+              <span>اختر الأعمدة الظاهرة:</span>
+              <label><input type="checkbox" data-audit-col-toggle="created_at" checked /> التاريخ</label>
+              <label><input type="checkbox" data-audit-col-toggle="username" checked /> المستخدم</label>
+              <label><input type="checkbox" data-audit-col-toggle="role" /> الدور</label>
+              <label><input type="checkbox" data-audit-col-toggle="action" checked /> العملية</label>
+              <label><input type="checkbox" data-audit-col-toggle="entity_type" checked /> الكيان</label>
+              <label><input type="checkbox" data-audit-col-toggle="entity_id" /> المعرف</label>
+              <label><input type="checkbox" data-audit-col-toggle="details" /> التفاصيل</label>
+            </div>
+            <table class="ops-table">
+              <thead>
+                <tr>
+                  <th data-audit-col="created_at">التاريخ</th>
+                  <th data-audit-col="username">المستخدم</th>
+                  <th data-audit-col="role">الدور</th>
+                  <th data-audit-col="action">العملية</th>
+                  <th data-audit-col="entity_type">الكيان</th>
+                  <th data-audit-col="entity_id">المعرف</th>
+                  <th data-audit-col="details">التفاصيل</th>
+                </tr>
+              </thead>
+              <tbody id="audit-table"></tbody>
+            </table>
+            <div class="inline-message" id="audit-message"></div>
+          </div>
+
+          <div class="form-card" id="ops-notify-card">
+            <h3>إشعارات فورية</h3>
+            <div class="form-actions">
+              <button class="primary" id="alerts-enable">تفعيل إشعارات النظام</button>
+              <span class="ops-badge" id="alerts-notify-state">غير مفعلة</span>
+              <button class="secondary" id="alerts-test">اختبار إشعار</button>
+            </div>
+            <div class="inline-message" id="alerts-message"></div>
+          </div>
+
+          <div class="form-card" id="ops-branding-card">
+            <h3>الهوية الرسمية للطباعة</h3>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="branding-logo">رابط الشعار (URL)</label>
+                <input type="text" id="branding-logo" placeholder="https://.../logo.png" />
+              </div>
+              <div class="form-row">
+                <label for="branding-stamp">نص الختم</label>
+                <input type="text" id="branding-stamp" placeholder="ختم الشركة الرسمي" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="branding-save">حفظ الهوية</button>
+            </div>
+            <div class="inline-message" id="branding-message"></div>
+          </div>
+
+          <div class="form-card" id="ops-shortcuts-card">
+            <h3>اختصارات الكيبورد</h3>
+            <div class="form-actions">
+              <button class="secondary" id="shortcuts-help">عرض الاختصارات</button>
+            </div>
+            <div class="inline-message" id="shortcuts-message"></div>
+          </div>
+
+          <div class="form-card" id="ops-cloud-backup-card">
+            <h3>نسخ احتياطي سحابي (مساعد)</h3>
+            <p>ينزّل نسخة احتياطية محليًا ثم يفتح خدمة التخزين السحابي لرفع الملف يدويًا.</p>
+            <div class="form-actions">
+              <button class="secondary" id="cloud-backup-drive">نسخة + فتح Google Drive</button>
+              <button class="secondary" id="cloud-backup-onedrive">نسخة + فتح OneDrive</button>
+            </div>
+            <div class="inline-message" id="cloud-backup-message"></div>
+          </div>
+
+          <div class="form-card" id="ops-kpi-card">
+            <h3>مؤشرات KPI شهرية</h3>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="kpi-month">الشهر</label>
+                <input type="month" id="kpi-month" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="kpi-load">تحميل KPI</button>
+            </div>
+            <table class="ops-table">
+              <thead>
+                <tr>
+                  <th>المؤشر</th>
+                  <th>الشهر الحالي</th>
+                  <th>الشهر السابق</th>
+                </tr>
+              </thead>
+              <tbody id="kpi-table"></tbody>
+            </table>
+            <div class="inline-message" id="kpi-message"></div>
+          </div>
+
+          <div class="form-card" id="ops-monthly-close-card">
+            <h3>إغلاق شهري رسمي</h3>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="monthly-close-month">الشهر</label>
+                <input type="month" id="monthly-close-month" />
+              </div>
+              <div class="form-row">
+                <label for="monthly-close-reason">السبب</label>
+                <input type="text" id="monthly-close-reason" placeholder="إغلاق محاسبي شهري" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="monthly-close-save">إغلاق الشهر</button>
+              <button class="secondary" id="monthly-close-refresh">تحديث الإغلاقات</button>
+            </div>
+            <table class="ops-table">
+              <thead>
+                <tr>
+                  <th>الشهر</th>
+                  <th>السبب</th>
+                  <th>بواسطة</th>
+                  <th>التاريخ</th>
+                  <th>إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="monthly-close-table"></tbody>
+            </table>
+            <div class="inline-message" id="monthly-close-message"></div>
+          </div>
+
+          <div class="form-card" id="ops-import-card">
+            <h3>استيراد Excel مع معاينة</h3>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="import-type">نوع البيانات</label>
+                <select id="import-type">
+                  <option value="customers">زبائن</option>
+                  <option value="receipts">وصولات</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <label for="import-file">ملف Excel</label>
+                <input type="file" id="import-file" accept=".xlsx,.xls,.csv" />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="primary" id="import-preview">معاينة</button>
+              <button class="secondary" id="import-commit">استيراد</button>
+            </div>
+            <table class="ops-table">
+              <thead id="import-preview-head"></thead>
+              <tbody id="import-preview-table"></tbody>
+            </table>
+            <div class="inline-message" id="import-message"></div>
+          </div>
+
+          <div class="form-card" id="users-admin-card">
+            <h3>إدارة المستخدمين والصلاحيات</h3>
+            <div class="form-grid">
+              <div class="form-row">
+                <label for="user-admin-username">اسم المستخدم</label>
+                <input type="text" id="user-admin-username" placeholder="مثال: employee1" />
+              </div>
+              <div class="form-row">
+                <label for="user-admin-password">كلمة المرور</label>
+                <input type="password" id="user-admin-password" placeholder="اتركها فارغة عند التعديل بدون تغيير" />
+              </div>
+              <div class="form-row">
+                <label for="user-admin-role">الدور</label>
+                <select id="user-admin-role">
+                  <option value="viewer">مشاهد</option>
+                  <option value="accountant">محاسب</option>
+                  <option value="admin">مدير النظام</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="permissions-grid" id="permissions-grid"></div>
+
+            <div class="form-actions">
+              <button class="primary" id="user-admin-save">حفظ المستخدم</button>
+              <button class="secondary" id="user-admin-reset">تفريغ</button>
+              <button class="secondary" id="user-admin-refresh">تحديث القائمة</button>
+            </div>
+
+            <table class="ops-table">
+              <thead>
+                <tr>
+                  <th>المستخدم</th>
+                  <th>الدور</th>
+                  <th>المصدر</th>
+                  <th>الصلاحيات</th>
+                  <th>إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="users-admin-table"></tbody>
+            </table>
+            <div class="inline-message" id="user-admin-message"></div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="app-footer">
+        <div class="terms-wrap">
+          <div class="terms-brand">
+            <img src="/public/icons/app-icon.svg" alt="Masan Logo" class="terms-brand-logo" />
+            <div class="terms-brand-name">Masan</div>
+          </div>
+          <div>
+          <h4> شركة مه سه ن للتجارة العامة و الاستيراد والتصدير</h4>
+            <p id="terms-text"></p>
+          </div>
+          <div class="terms-meta">
+            <div><strong>اليوم:</strong> <span id="terms-day">-</span></div>
+            <div><strong>التاريخ:</strong> <span id="terms-date">-</span></div>
+            <div><strong>الوقت:</strong> <span id="terms-time">-</span></div>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <div class="auth-overlay" id="auth-overlay" aria-hidden="true">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <img src="/public/icons/app-icon.svg" alt="Masan Logo" class="auth-brand-logo" />
+          <div class="auth-brand-name">Masan</div>
+        </div>
+        <h2>تسجيل الدخول</h2>
+        <p class="auth-subtitle">ادخل اسم المستخدم وكلمة المرور للمتابعة.</p>
+        <div class="form-row">
+          <label>اسم المستخدم</label>
+          <input type="text" id="login-username" placeholder="اسم المستخدم" />
+        </div>
+        <div class="form-row">
+          <label>كلمة المرور</label>
+          <input type="password" id="login-password" placeholder="********" />
+        </div>
+        <div class="form-actions">
+          <button class="primary" id="login-submit">دخول</button>
+        </div>
+        <div class="inline-message" id="login-message"></div>
+      </div>
+    </div>
+
+    <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script defer src="/app.js"></script>
+  </body>
+</html>

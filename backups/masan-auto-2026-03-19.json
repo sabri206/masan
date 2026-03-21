@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "createdAt": "2026-03-19T00:54:23.299Z",
+  "data": {
+    "customers": [
+      {
+        "id": 32,
+        "code": 1611000,
+        "name": "sabri yousif",
+        "name_norm": "sabri yousif",
+        "phone": "07504010800",
+        "address": "china",
+        "initial_balance": 400000,
+        "created_at": "2026-03-18T23:00:50.245Z"
+      },
+      {
+        "id": 33,
+        "code": 1611001,
+        "name": "sundis",
+        "name_norm": "sundis",
+        "phone": "0",
+        "address": "china",
+        "initial_balance": 0,
+        "created_at": "2026-03-18T23:01:24.844Z"
+      },
+      {
+        "id": 34,
+        "code": 1611002,
+        "name": "renas",
+        "name_norm": "renas",
+        "phone": "",
+        "address": "",
+        "initial_balance": 0,
+        "created_at": "2026-03-18T23:01:32.543Z"
+      },
+      {
+        "id": 36,
+        "code": 1611004,
+        "name": "hasan",
+        "name_norm": "hasan",
+        "phone": "",
+        "address": "",
+        "initial_balance": 0,
+        "created_at": "2026-03-18T23:01:47.560Z"
+      },
+      {
+        "id": 37,
+        "code": 1611005,
+        "name": "sabri RMB",
+        "name_norm": "sabri rmb",
+        "phone": "",
+        "address": "",
+        "initial_balance": 0,
+        "created_at": "2026-03-18T23:02:03.560Z"
+      }
+    ],
+    "receipts": [
+      {
+        "id": 181,
+        "invoice_no": 1,
+        "customer_id": 32,
+        "date": "2026-03-18",
+        "type": "دفع",
+        "amount": -49000,
+        "sender_name": "sabri yousif",
+        "receiver_name": "diyar",
+        "delivery_date": "2026-03-19",
+        "details": "qedim",
+        "created_at": "2026-03-18T23:02:44.260Z"
+      },
+      {
+        "id": 183,
+        "invoice_no": 3,
+        "customer_id": 32,
+        "date": "2026-03-18",
+        "type": "دفع",
+        "amount": -79000,
+        "sender_name": "sabri yousif",
+        "receiver_name": "renas",
+        "delivery_date": "",
+        "details": "qedim",
+        "created_at": "2026-03-18T23:03:05.361Z"
+      },
+      {
+        "id": 184,
+        "invoice_no": 4,
+        "customer_id": 34,
+        "date": "2026-03-18",
+        "type": "دفع",
+        "amount": 79000,
+        "sender_name": "sabri yousif",
+        "receiver_name": "renas",
+        "delivery_date": "",
+        "details": "qedim",
+        "created_at": "2026-03-18T23:03:05.361Z"
+      },
+      {
+        "id": 185,
+        "invoice_no": 5,
+        "customer_id": 32,
+        "date": "2026-03-18",
+        "type": "دفع",
+        "amount": -26000,
+        "sender_name": "sabri yousif",
+        "receiver_name": "hasan",
+        "delivery_date": "",
+        "details": "",
+        "created_at": "2026-03-18T23:03:16.693Z"
+      },
+      {
+        "id": 186,
+        "invoice_no": 6,
+        "customer_id": 36,
+        "date": "2026-03-18",
+        "type": "دفع",
+        "amount": 26000,
+        "sender_name": "sabri yousif",
+        "receiver_name": "hasan",
+        "delivery_date": "",
+        "details": "",
+        "created_at": "2026-03-18T23:03:16.694Z"
+      },
+      {
+        "id": 189,
+        "invoice_no": 9,
+        "customer_id": 34,
+        "date": "2026-03-18",
+        "type": "النقل",
+        "amount": 42721,
+        "sender_name": "renas",
+        "receiver_name": "",
+        "delivery_date": "",
+        "details": "ماركة: sabri yousif -r4545 مع الإجمالي النهائي",
+        "created_at": "2026-03-18T23:05:21.228Z"
+      },
+      {
+        "id": 197,
+        "invoice_no": 17,
+        "customer_id": 37,
+        "date": "2026-03-18",
+        "type": "تحويل",
+        "amount": -85000,
+        "sender_name": "sabri RMB",
+        "receiver_name": "sundis",
+        "delivery_date": "",
+        "details": "رممبي 85000 -> دولار | سعر صرف 7",
+        "created_at": "2026-03-18T23:11:29.374Z"
+      },
+      {
+        "id": 198,
+        "invoice_no": 18,
+        "customer_id": 33,
+        "date": "2026-03-18",
+        "type": "تحويل",
+        "amount": 12142.857142857143,
+        "sender_name": "sabri RMB",
+        "receiver_name": "sundis",
+        "delivery_date": "",
+        "details": "رممبي 85000 -> دولار | سعر صرف 7",
+        "created_at": "2026-03-18T23:11:29.374Z"
+      },
+      {
+        "id": 199,
+        "invoice_no": 19,
+        "customer_id": 36,
+        "date": "2026-03-19",
+        "type": "النقل",
+        "amount": 38001,
+        "sender_name": "hasan",
+        "receiver_name": "",
+        "delivery_date": "",
+        "details": "ماركة: sabri yousif -r4545 مع الإجمالي النهائي",
+        "created_at": "2026-03-19T00:13:46.910Z"
+      },
+      {
+        "id": 200,
+        "invoice_no": 20,
+        "customer_id": 34,
+        "date": "2026-03-19",
+        "type": "قبض",
+        "amount": -21721,
+        "sender_name": "renas",
+        "receiver_name": "sabri yousif",
+        "delivery_date": "2026-03-17",
+        "details": "to diyar",
+        "created_at": "2026-03-19T00:31:33.510Z"
+      },
+      {
+        "id": 201,
+        "invoice_no": 21,
+        "customer_id": 32,
+        "date": "2026-03-19",
+        "type": "قبض",
+        "amount": 21721,
+        "sender_name": "renas",
+        "receiver_name": "sabri yousif",
+        "delivery_date": "2026-03-17",
+        "details": "to diyar",
+        "created_at": "2026-03-19T00:31:33.512Z"
+      }
+    ],
+    "transfers": [
+      {
+        "id": 40,
+        "transfer_no": 17,
+        "sender_id": 37,
+        "receiver_id": 33,
+        "date": "2026-03-18",
+        "amount": 85000,
+        "exchange_rate": 7,
+        "fee": 0,
+        "converted_amount": 12142.857142857143,
+        "currency_from": "رممبي",
+        "currency_to": "دولار",
+        "sender_receipt_id": 197,
+        "receiver_receipt_id": 198,
+        "created_at": "2026-03-18T23:11:29.375Z"
+      }
+    ],
+    "budgets": [
+      {
+        "id": 4,
+        "customer_id": null,
+        "period_type": "yearly",
+        "period_value": "2026",
+        "category": "دفع",
+        "kind": "income",
+        "amount": 30000,
+        "notes": "",
+        "created_at": "2026-02-20T13:00:29.560Z"
+      },
+      {
+        "id": 5,
+        "customer_id": 16,
+        "period_type": "yearly",
+        "period_value": "2026",
+        "category": "قبض",
+        "kind": "income",
+        "amount": 100000,
+        "notes": "",
+        "created_at": "2026-02-20T13:55:27.648Z"
+      },
+      {
+        "id": 6,
+        "customer_id": 23,
+        "period_type": "monthly",
+        "period_value": "2026-03",
+        "category": "f",
+        "kind": "income",
+        "amount": 9,
+        "notes": "",
+        "created_at": "2026-03-01T14:10:38.796Z"
+      },
+      {
+        "id": 7,
+        "customer_id": 23,
+        "period_type": "monthly",
+        "period_value": "2026-03",
+        "category": "إيرادات",
+        "kind": "expense",
+        "amount": 90000,
+        "notes": "",
+        "created_at": "2026-03-05T13:41:49.957Z"
+      }
+    ],
+    "locks": [],
+    "monthlyCloses": [],
+    "rmbExpenses": [
+      {
+        "id": 5,
+        "customer_id": 36,
+        "invoice_no": "INV-2026-000168",
+        "date": "2026-03-19",
+        "amount": 87,
+        "exchange_rate": 7,
+        "details": "صرف رممبي لفاتورة INV-2026-000168 | ماركة: sabri yousif -r4545",
+        "created_at": "2026-03-19T00:13:46.913Z"
+      }
+    ]
+  }
+}
