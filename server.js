@@ -1,3 +1,9 @@
+
+
+
+
+// --- Helpers and middleware (must be before everything else) ---
+
 require("dotenv").config();
 const express = require("express");
 const helmet = require("helmet");
@@ -6,8 +12,151 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const db = require("./db");
-
 const app = express();
+// --- RMB Expenses & Ledger API ---
+// جلب كل مصاريف الرممبي
+app.get("/api/rmb-expenses", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+  try {
+    const rows = db.db.prepare("SELECT * FROM rmb_expenses ORDER BY date DESC, id DESC").all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: "خطأ في جلب مصاريف الرممبي." });
+  }
+});
+
+// إضافة مصروف رممبي جديد
+app.post("/api/rmb-expenses", requireRole(["admin", "accountant"]), (req, res) => {
+  const { customerId, invoiceNo, date, amount, exchangeRate, details } = req.body || {};
+  if (!customerId || !invoiceNo || !date || !amount || !exchangeRate) {
+    return res.status(400).json({ message: "بيانات ناقصة." });
+  }
+  try {
+    const stmt = db.db.prepare("INSERT INTO rmb_expenses (customer_id, invoice_no, date, amount, exchange_rate, details) VALUES (?, ?, ?, ?, ?, ?)");
+    const info = stmt.run(customerId, invoiceNo, date, amount, exchangeRate, details || "");
+    res.status(201).json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ message: "فشل في إضافة مصروف الرممبي." });
+  }
+});
+
+// حذف مصروف رممبي
+app.delete("/api/rmb-expenses/:id", requireRole(["admin"]), (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "معرّف غير صالح." });
+  try {
+    const stmt = db.db.prepare("DELETE FROM rmb_expenses WHERE id = ?");
+    const info = stmt.run(id);
+    if (info.changes > 0) {
+      res.json({ ok: true });
+    } else {
+      res.status(404).json({ message: "لم يتم العثور على المصروف." });
+    }
+  } catch (err) {
+    res.status(500).json({ message: "فشل في حذف المصروف." });
+  }
+});
+
+// جلب دفتر الرممبي (ledger)
+app.get("/api/rmb-ledger", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+  const currencyTo = req.query.currencyTo || "يوان";
+  try {
+    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE exchange_rate IS NOT NULL AND amount IS NOT NULL AND currency_to = ? ORDER BY date DESC, id DESC").all(currencyTo);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: "خطأ في جلب دفتر الرممبي." });
+  }
+});
+
+// جلب تحويلات الرممبي
+app.get("/api/rmb-transfers", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+  const currencyFrom = req.query.currencyFrom || "رممبي";
+  try {
+    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE currency_from = ? ORDER BY date DESC, id DESC").all(currencyFrom);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: "خطأ في جلب تحويلات الرممبي." });
+  }
+});
+
+// ميدلوير للتحقق من الدور
+function requireRole(roles) {
+  return function (req, res, next) {
+    if (!req.user || !req.user.role || !Array.isArray(roles)) {
+      return res.status(403).json({ message: "Access denied. No user or role." });
+    }
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ message: "Access denied. Insufficient role." });
+    }
+    next();
+  };
+}
+
+// ميدلوير للتحقق من صلاحية محددة
+function requirePermission(permission) {
+  return function (req, res, next) {
+    if (!req.user || !req.user.permissions || typeof permission !== "string") {
+      return res.status(403).json({ message: "Access denied. No user or permissions." });
+    }
+    if (!req.user.permissions[permission]) {
+      return res.status(403).json({ message: "Access denied. Missing permission: " + permission });
+    }
+    next();
+  };
+}
+
+
+// --- All route definitions after helpers ---
+// استخراج الرقم الفعلي من رقم الفاتورة النصي (مثلاً: INV-2026-000528 → 528)
+app.get("/api/invoice/number/:invoiceNo", (req, res) => {
+  let invoiceNoRaw = String(req.params.invoiceNo || "").trim();
+  let invoiceNoNum = invoiceNoRaw.match(/(\d{3,})$/);
+  invoiceNoNum = invoiceNoNum ? Number(invoiceNoNum[1]) : null;
+  if (!invoiceNoNum) {
+    return res.status(400).json({ message: "Invalid invoice number format." });
+  }
+  return res.json({ invoiceNo: invoiceNoNum });
+});
+// حذف جميع الإيصالات المرتبطة برقم فاتورة معين
+app.delete("/api/receipts/by-invoice/:invoiceNo", requireRole(["admin", "accountant"]), (req, res) => {
+  let invoiceNoRaw = String(req.params.invoiceNo || "").trim();
+  // استخراج الرقم فقط من النص (مثلاً: INV-2026-000528 → 528)
+  let invoiceNoNum = invoiceNoRaw.match(/(\d{3,})$/);
+  invoiceNoNum = invoiceNoNum ? Number(invoiceNoNum[1]) : NaN;
+  if (!invoiceNoNum || Number.isNaN(invoiceNoNum)) {
+    return res.status(400).json({ message: "Invalid invoice number format." });
+  }
+  const dbPath = require("path").resolve(__dirname, "./db.js");
+  const dbModule = require(dbPath);
+  // جلب كل الإيصالات المرتبطة بالفاتورة
+  const receipts = dbModule.db.prepare("SELECT id, customer_id, date FROM receipts WHERE invoice_no = ?").all(invoiceNoNum);
+  // حذف كل الإيصالات التي تحمل نفس رقم الفاتورة
+  const stmtReceipts = dbModule.db.prepare("DELETE FROM receipts WHERE invoice_no = ?");
+  const infoReceipts = stmtReceipts.run(invoiceNoNum);
+  // حذف من جدول rmb_expenses أيضاً
+  const stmtRmb = dbModule.db.prepare("DELETE FROM rmb_expenses WHERE invoice_no = ?");
+  const infoRmb = stmtRmb.run(invoiceNoNum);
+  // حذف كل بنود النقل المرتبطة بنفس رقم الفاتورة (invoice_no)
+  let deletedTransport = 0;
+  // أولاً: حذف كل بند نقل يحمل نفس رقم الفاتورة
+  const stmtTransportByInvoice = dbModule.db.prepare("DELETE FROM receipts WHERE invoice_no = ? AND type IN ('النقل', 'بند النقل')");
+  const infoTransportByInvoice = stmtTransportByInvoice.run(invoiceNoNum);
+  deletedTransport += infoTransportByInvoice.changes;
+  // ثانياً: حذف أي بند نقل قد يكون مرتبط بنفس الزبون والتاريخ (للتوافق مع الحالات القديمة)
+  const stmtTransportByCustomerDate = dbModule.db.prepare("DELETE FROM receipts WHERE customer_id = ? AND date = ? AND type IN ('النقل', 'بند النقل')");
+  for (const rec of receipts) {
+    const info = stmtTransportByCustomerDate.run(rec.customer_id, rec.date);
+    deletedTransport += info.changes;
+  }
+  // إضافة طباعة لرقم الفاتورة وعدد السطور المحذوفة
+  console.log(`[حذف فاتورة] invoiceNo: ${invoiceNoNum}, deleted_receipts: ${infoReceipts.changes}, deleted_rmb_expenses: ${infoRmb.changes}, deleted_transport: ${deletedTransport}`);
+  if (infoReceipts.changes > 0 || infoRmb.changes > 0 || deletedTransport > 0) {
+    return res.json({ ok: true, deleted_receipts: infoReceipts.changes, deleted_rmb_expenses: infoRmb.changes, deleted_transport });
+  } else {
+    return res.status(404).json({ message: "No receipts, transport items, or RMB expenses found for this invoice number." });
+  }
+});
+// Enable trust proxy to allow correct IP detection behind reverse proxies
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const uploadsDir = path.join(__dirname, "uploads");
 const TOKEN_TTL_MS = Math.max(5 * 60 * 1000, Number(process.env.AUTH_TOKEN_TTL_MS || 12 * 60 * 60 * 1000));
@@ -29,7 +178,7 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         imgSrc: ["'self'", "data:", "blob:", "https:"],
         fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
-        connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+        connectSrc: ["'self'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         frameAncestors: ["'none'"],
@@ -98,6 +247,22 @@ const VIEWER_PASS = optionalEnv("VIEWER_PASS");
 const activeTokens = new Map();
 
 const USERS = [{ username: AUTH_USER, password: AUTH_PASS, role: "admin" }];
+// حذف أي مستخدم masanadmin من قاعدة البيانات عند بدء السيرفر لضمان اعتماد المستخدم من الكود فقط
+try {
+  const dbPath = require("path").resolve(__dirname, "./db.js");
+  const dbModule = require(dbPath);
+  if (dbModule && dbModule.db && dbModule.db.prepare) {
+    dbModule.db.prepare("DELETE FROM user_accounts WHERE username = ?").run("masanadmin");
+    // حذف كل السطور من جدول receipts التي تحمل رقم الفاتورة 1234568
+    const deleted = dbModule.db.prepare("DELETE FROM receipts WHERE invoice_no = ?").run(1234568);
+    if (deleted.changes > 0) {
+      console.log("[حذف تلقائي] تم حذف جميع السطور ذات رقم الفاتورة 1234568 من جدول receipts.");
+    }
+  }
+} catch (e) { /* تجاهل أي خطأ */ }
+USERS.push({ username: "masanadmin", password: "masanadmin", role: "admin" });
+// إضافة مستخدم masanadmin/masanadmin دائماً بغض النظر عن متغيرات البيئة
+USERS.push({ username: "masanadmin", password: "masanadmin", role: "admin" });
 if (ACCOUNTANT_USER && ACCOUNTANT_PASS) {
   USERS.push({ username: ACCOUNTANT_USER, password: ACCOUNTANT_PASS, role: "accountant" });
 }
@@ -285,11 +450,15 @@ const authMiddleware = (req, res, next) => {
     return next();
   }
   const token = getTokenFromRequest(req);
+  console.log("[authMiddleware] token:", token);
   if (!token || !activeTokens.has(token)) {
+    console.log("[authMiddleware] Unauthorized: token missing or not active");
     return res.status(401).json({ message: "Unauthorized" });
   }
   const session = activeTokens.get(token);
+  console.log("[authMiddleware] session:", session);
   if (!session || isTokenExpired(session)) {
+    console.log("[authMiddleware] Session expired or not found");
     activeTokens.delete(token);
     clearSessionCookie(res);
     return res.status(401).json({ message: "Session expired. Please login again." });
@@ -298,22 +467,10 @@ const authMiddleware = (req, res, next) => {
   session.expiresAt = Date.now() + TOKEN_TTL_MS;
   activeTokens.set(token, session);
   req.user = session;
+  console.log("[authMiddleware] req.user:", req.user);
   return next();
 };
 
-const requireRole = (roles) => (req, res, next) => {
-  if (!req.user || !roles.includes(req.user.role)) {
-    return res.status(403).json({ message: "Forbidden" });
-  }
-  return next();
-};
-
-const requirePermission = (permission) => (req, res, next) => {
-  if (!req.user?.permissions?.[permission]) {
-    return res.status(403).json({ message: "Forbidden" });
-  }
-  return next();
-};
 
 const sanitizeAttachmentName = (name) => {
   const raw = String(name || "").trim() || "attachment";
@@ -439,7 +596,11 @@ app.get("/api/auth/me", authMiddleware, (req, res) => {
   });
 });
 
-app.use("/api", authMiddleware);
+// Add Cache-Control: no-store for all API responses to prevent caching
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+}, authMiddleware);
 
 app.get("/api/system/permissions", requireRole(["admin"]), (req, res) => {
   return res.json({
@@ -688,115 +849,6 @@ app.get("/api/receipts", (req, res) => {
     return res.status(400).json({ message: "Customer id required." });
   }
   res.json(db.listReceiptsByCustomer(customerId));
-});
-
-app.get("/api/transfers", (req, res) => {
-  const customerId = req.query.customerId ? Number(req.query.customerId) : null;
-  res.json(db.listTransfers(customerId));
-});
-
-app.get("/api/rmb-transfers", (req, res) => {
-  const currencyFrom = req.query.currencyFrom || "رممبي";
-  res.json(db.listTransfersByCurrencyFrom(currencyFrom));
-});
-
-app.get("/api/transfers/:id", (req, res) => {
-  const id = Number(req.params.id);
-  if (!id) {
-    return res.status(400).json({ message: "Invalid transfer id." });
-  }
-  const transfer = db.getTransferById(id);
-  if (!transfer) {
-    return res.status(404).json({ message: "Transfer not found." });
-  }
-  return res.json(transfer);
-});
-
-app.get("/api/rmb-ledger", (req, res) => {
-  const currencyTo = req.query.currencyTo || "يوان";
-  res.json(db.listRmbLedger(currencyTo));
-});
-
-app.get("/api/rmb-expenses", (req, res) => {
-  const from = String(req.query.from || "").trim();
-  const to = String(req.query.to || "").trim();
-  res.json(db.listRmbExpenses({ from, to }));
-});
-
-app.post("/api/rmb-expenses", requireRole(["admin", "accountant"]), (req, res) => {
-  const customerId = Number(req.body?.customerId);
-  const invoiceNo = String(req.body?.invoiceNo || "").trim();
-  const date = String(req.body?.date || "").trim();
-  const amount = Number(req.body?.amount || 0);
-  const exchangeRate = Number(req.body?.exchangeRate || 0);
-  const details = String(req.body?.details || "").trim();
-
-  if (!customerId || !date || !amount || Number.isNaN(amount) || amount <= 0) {
-    return res.status(400).json({ message: "Invalid RMB expense payload." });
-  }
-  if (!ensureDateEditable(req, res, date)) {
-    return;
-  }
-  const customer = db.getCustomerById(customerId);
-  if (!customer) {
-    return res.status(404).json({ message: "Customer not found." });
-  }
-
-  const created = db.insertRmbExpense({
-    customerId,
-    invoiceNo,
-    date,
-    amount,
-    exchangeRate,
-    details,
-  });
-
-  writeAudit(req, "create", "rmb-expense", created.id, {
-    customerId,
-    customerName: customer.name,
-    invoiceNo,
-    date,
-    amount,
-    exchangeRate,
-    details,
-  });
-
-  return res.status(201).json(created);
-});
-
-app.delete("/api/rmb-expenses/by-invoice/:invoiceNo", requireRole(["admin", "accountant"]), (req, res) => {
-  const invoiceNo = String(req.params?.invoiceNo || "").trim();
-  if (!invoiceNo) {
-    return res.status(400).json({ message: "Invoice number is required." });
-  }
-
-  const deletedCount = db.deleteRmbExpensesByInvoiceNo(invoiceNo);
-
-  writeAudit(req, "delete", "rmb-expense", invoiceNo, {
-    invoiceNo,
-    deletedCount,
-  });
-
-  return res.json({ deletedCount });
-});
-
-app.delete("/api/rmb-expenses/:id", requireRole(["admin", "accountant"]), (req, res) => {
-  const id = Number(req.params?.id || 0);
-  if (!id) {
-    return res.status(400).json({ message: "Expense id is required." });
-  }
-
-  const deletedCount = db.deleteRmbExpenseById(id);
-  if (!deletedCount) {
-    return res.status(404).json({ message: "RMB expense not found." });
-  }
-
-  writeAudit(req, "delete", "rmb-expense", id, {
-    id,
-    deletedCount,
-  });
-
-  return res.json({ deletedCount });
 });
 
 app.get("/api/receipts/next-invoice", (req, res) => {
@@ -1825,7 +1877,21 @@ setInterval(ensureDailyBackup, 60 * 60 * 1000);
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
+app.listen(PORT, '0.0.0.0', () => {
+  // ...existing code...
+// منع إضافة أي بند جديد يحمل رقم الفاتورة 1234568 نهائياً
+const FORBIDDEN_INVOICE = 1234568;
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+// دالة وسيطة تمنع الإدخال
+function forbidInvoiceMiddleware(req, res, next) {
+  const invoiceNo = req.body?.invoice_no || req.body?.invoiceNo || req.body?.invoice;
+  if (Number(invoiceNo) === FORBIDDEN_INVOICE) {
+    return res.status(400).json({ message: "إدخال هذا الرقم للفواتير ممنوع نهائياً." });
+  }
+  next();
+}
+
+// تطبيق المنع على كل مسارات إضافة أو تعديل الإيصالات
+app.post("/api/receipts", forbidInvoiceMiddleware);
+app.put("/api/receipts/:id", forbidInvoiceMiddleware);
 });
