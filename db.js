@@ -1756,8 +1756,8 @@ const restoreBackupSnapshot = (snapshot) => {
     throw new Error("Invalid backup format.");
   }
 
+  db.pragma("foreign_keys = OFF");
   const run = db.transaction(() => {
-    db.pragma("foreign_keys = OFF");
     db.prepare("DELETE FROM transfers").run();
     db.prepare("DELETE FROM receipts").run();
     db.prepare("DELETE FROM budgets").run();
@@ -1901,10 +1901,10 @@ const restoreBackupSnapshot = (snapshot) => {
         row.updated_at || nowIso()
       );
     });
-    db.pragma("foreign_keys = ON");
   });
 
   run();
+  db.pragma("foreign_keys = ON");
   return true;
 };
 
