@@ -1972,4 +1972,5 @@ module.exports = {
   deleteUserAccount,
   createBackupSnapshot,
   restoreBackupSnapshot,
+  db,
 };
