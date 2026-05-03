@@ -544,7 +544,8 @@ app.get("/api/rmb-expenses", requireRole(["admin", "accountant", "viewer"]), (re
     const rows = db.db.prepare("SELECT * FROM rmb_expenses ORDER BY date DESC, id DESC").all();
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ message: "خطأ في جلب مصاريف الرممبي." });
+    console.error("[rmb-expenses]", err.message);
+    res.status(500).json({ message: "خطأ في جلب مصاريف الرممبي.", error: err.message });
   }
 });
 
