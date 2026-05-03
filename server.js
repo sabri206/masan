@@ -1069,6 +1069,16 @@ app.post("/api/receipts/transport-item", requireRole(["admin", "accountant"]), (
   }
 });
 
+app.get("/api/transfers", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+  try {
+    const customerId = req.query.customerId ? Number(req.query.customerId) : null;
+    const rows = db.listTransfers(customerId);
+    return res.json(rows);
+  } catch (err) {
+    return res.status(500).json({ message: "Failed to fetch transfers.", error: err.message });
+  }
+});
+
 app.post("/api/transfers", requireRole(["admin", "accountant"]), (req, res) => {
   const {
     senderCustomerId,
