@@ -581,7 +581,7 @@ app.delete("/api/rmb-expenses/:id", requireRole(["admin"]), (req, res) => {
 app.get("/api/rmb-ledger", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
   const currencyTo = req.query.currencyTo || "يوان";
   try {
-    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE exchange_rate IS NOT NULL AND amount IS NOT NULL AND currency_to = ? ORDER BY date DESC, id DESC").all(currencyTo);
+    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE exchange_rate IS NOT NULL AND amount IS NOT NULL ORDER BY date DESC, id DESC").all();
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: "خطأ في جلب دفتر الرممبي." });
@@ -589,9 +589,8 @@ app.get("/api/rmb-ledger", requireRole(["admin", "accountant", "viewer"]), (req,
 });
 
 app.get("/api/rmb-transfers", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
-  const currencyFrom = req.query.currencyFrom || "رممبي";
   try {
-    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE currency_from = ? ORDER BY date DESC, id DESC").all(currencyFrom);
+    const rows = db.db.prepare("SELECT * FROM rmb_expenses ORDER BY date DESC, id DESC").all();
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: "خطأ في جلب تحويلات الرممبي." });
