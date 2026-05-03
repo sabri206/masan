@@ -13,70 +13,6 @@ const fs = require("fs");
 const crypto = require("crypto");
 const db = require("./db");
 const app = express();
-// --- RMB Expenses & Ledger API ---
-// جلب كل مصاريف الرممبي
-app.get("/api/rmb-expenses", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
-  try {
-    const rows = db.db.prepare("SELECT * FROM rmb_expenses ORDER BY date DESC, id DESC").all();
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ message: "خطأ في جلب مصاريف الرممبي." });
-  }
-});
-
-// إضافة مصروف رممبي جديد
-app.post("/api/rmb-expenses", requireRole(["admin", "accountant"]), (req, res) => {
-  const { customerId, invoiceNo, date, amount, exchangeRate, details } = req.body || {};
-  if (!customerId || !invoiceNo || !date || !amount || !exchangeRate) {
-    return res.status(400).json({ message: "بيانات ناقصة." });
-  }
-  try {
-    const stmt = db.db.prepare("INSERT INTO rmb_expenses (customer_id, invoice_no, date, amount, exchange_rate, details) VALUES (?, ?, ?, ?, ?, ?)");
-    const info = stmt.run(customerId, invoiceNo, date, amount, exchangeRate, details || "");
-    res.status(201).json({ id: info.lastInsertRowid });
-  } catch (err) {
-    res.status(500).json({ message: "فشل في إضافة مصروف الرممبي." });
-  }
-});
-
-// حذف مصروف رممبي
-app.delete("/api/rmb-expenses/:id", requireRole(["admin"]), (req, res) => {
-  const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ message: "معرّف غير صالح." });
-  try {
-    const stmt = db.db.prepare("DELETE FROM rmb_expenses WHERE id = ?");
-    const info = stmt.run(id);
-    if (info.changes > 0) {
-      res.json({ ok: true });
-    } else {
-      res.status(404).json({ message: "لم يتم العثور على المصروف." });
-    }
-  } catch (err) {
-    res.status(500).json({ message: "فشل في حذف المصروف." });
-  }
-});
-
-// جلب دفتر الرممبي (ledger)
-app.get("/api/rmb-ledger", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
-  const currencyTo = req.query.currencyTo || "يوان";
-  try {
-    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE exchange_rate IS NOT NULL AND amount IS NOT NULL AND currency_to = ? ORDER BY date DESC, id DESC").all(currencyTo);
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ message: "خطأ في جلب دفتر الرممبي." });
-  }
-});
-
-// جلب تحويلات الرممبي
-app.get("/api/rmb-transfers", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
-  const currencyFrom = req.query.currencyFrom || "رممبي";
-  try {
-    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE currency_from = ? ORDER BY date DESC, id DESC").all(currencyFrom);
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ message: "خطأ في جلب تحويلات الرممبي." });
-  }
-});
 
 // ميدلوير للتحقق من الدور
 function requireRole(roles) {
@@ -601,6 +537,66 @@ app.use("/api", (req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   next();
 }, authMiddleware);
+
+// --- RMB Expenses & Ledger API ---
+app.get("/api/rmb-expenses", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+  try {
+    const rows = db.db.prepare("SELECT * FROM rmb_expenses ORDER BY date DESC, id DESC").all();
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: "خطأ في جلب مصاريف الرممبي." });
+  }
+});
+
+app.post("/api/rmb-expenses", requireRole(["admin", "accountant"]), (req, res) => {
+  const { customerId, invoiceNo, date, amount, exchangeRate, details } = req.body || {};
+  if (!customerId || !invoiceNo || !date || !amount || !exchangeRate) {
+    return res.status(400).json({ message: "بيانات ناقصة." });
+  }
+  try {
+    const stmt = db.db.prepare("INSERT INTO rmb_expenses (customer_id, invoice_no, date, amount, exchange_rate, details) VALUES (?, ?, ?, ?, ?, ?)");
+    const info = stmt.run(customerId, invoiceNo, date, amount, exchangeRate, details || "");
+    res.status(201).json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ message: "فشل في إضافة مصروف الرممبي." });
+  }
+});
+
+app.delete("/api/rmb-expenses/:id", requireRole(["admin"]), (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ message: "معرّف غير صالح." });
+  try {
+    const stmt = db.db.prepare("DELETE FROM rmb_expenses WHERE id = ?");
+    const info = stmt.run(id);
+    if (info.changes > 0) {
+      res.json({ ok: true });
+    } else {
+      res.status(404).json({ message: "لم يتم العثور على المصروف." });
+    }
+  } catch (err) {
+    res.status(500).json({ message: "فشل في حذف المصروف." });
+  }
+});
+
+app.get("/api/rmb-ledger", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+  const currencyTo = req.query.currencyTo || "يوان";
+  try {
+    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE exchange_rate IS NOT NULL AND amount IS NOT NULL AND currency_to = ? ORDER BY date DESC, id DESC").all(currencyTo);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: "خطأ في جلب دفتر الرممبي." });
+  }
+});
+
+app.get("/api/rmb-transfers", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+  const currencyFrom = req.query.currencyFrom || "رممبي";
+  try {
+    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE currency_from = ? ORDER BY date DESC, id DESC").all(currencyFrom);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: "خطأ في جلب تحويلات الرممبي." });
+  }
+});
 
 app.get("/api/system/permissions", requireRole(["admin"]), (req, res) => {
   return res.json({
