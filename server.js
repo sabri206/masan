@@ -11,6 +11,7 @@ const rateLimit = require("express-rate-limit");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 const db = require("./db");
 const app = express();
 
@@ -1879,6 +1880,39 @@ const ensureDailyBackup = () => {
 
 ensureDailyBackup();
 setInterval(ensureDailyBackup, 60 * 60 * 1000);
+
+// إرسال نسخة احتياطية يومية عبر البريد الإلكتروني
+const sendDailyBackupEmail = async () => {
+  const emailUser = process.env.BACKUP_EMAIL_USER;
+  const emailPass = process.env.BACKUP_EMAIL_PASS;
+  const emailTo = process.env.BACKUP_EMAIL_TO;
+  if (!emailUser || !emailPass || !emailTo) return;
+
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const filePath = path.join(backupsDir, `masan-auto-${day}.json`);
+    if (!fs.existsSync(filePath)) return;
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: emailUser, pass: emailPass },
+    });
+
+    await transporter.sendMail({
+      from: emailUser,
+      to: emailTo,
+      subject: `نسخة احتياطية - Masan ${day}`,
+      text: `النسخة الاحتياطية اليومية لتطبيق Masan بتاريخ ${day}`,
+      attachments: [{ filename: `masan-backup-${day}.json`, path: filePath }],
+    });
+  } catch (err) {
+    console.error("[backup-email]", err.message);
+  }
+};
+
+// إرسال مرة عند بدء التشغيل + كل 24 ساعة
+setTimeout(sendDailyBackupEmail, 10000);
+setInterval(sendDailyBackupEmail, 24 * 60 * 60 * 1000);
 
 app.get("/health", (req, res) => {
   res.json({ ok: true });
