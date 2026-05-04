@@ -44,7 +44,7 @@ function requirePermission(permission) {
 
 // --- All route definitions after helpers ---
 // استخراج الرقم الفعلي من رقم الفاتورة النصي (مثلاً: INV-2026-000528 → 528)
-app.get("/api/invoice/number/:invoiceNo", (req, res) => {
+app.get("/api/invoice/number/:invoiceNo", async (req, res) => {
   let invoiceNoRaw = String(req.params.invoiceNo || "").trim();
   let invoiceNoNum = invoiceNoRaw.match(/(\d{3,})$/);
   invoiceNoNum = invoiceNoNum ? Number(invoiceNoNum[1]) : null;
@@ -54,42 +54,32 @@ app.get("/api/invoice/number/:invoiceNo", (req, res) => {
   return res.json({ invoiceNo: invoiceNoNum });
 });
 // حذف جميع الإيصالات المرتبطة برقم فاتورة معين
-app.delete("/api/receipts/by-invoice/:invoiceNo", requireRole(["admin", "accountant"]), (req, res) => {
+app.delete("/api/receipts/by-invoice/:invoiceNo", requireRole(["admin", "accountant"]), async (req, res) => {
   let invoiceNoRaw = String(req.params.invoiceNo || "").trim();
-  // استخراج الرقم فقط من النص (مثلاً: INV-2026-000528 → 528)
   let invoiceNoNum = invoiceNoRaw.match(/(\d{3,})$/);
   invoiceNoNum = invoiceNoNum ? Number(invoiceNoNum[1]) : NaN;
   if (!invoiceNoNum || Number.isNaN(invoiceNoNum)) {
     return res.status(400).json({ message: "Invalid invoice number format." });
   }
-  const dbPath = require("path").resolve(__dirname, "./db.js");
-  const dbModule = require(dbPath);
-  // جلب كل الإيصالات المرتبطة بالفاتورة
-  const receipts = dbModule.db.prepare("SELECT id, customer_id, date FROM receipts WHERE invoice_no = ?").all(invoiceNoNum);
-  // حذف كل الإيصالات التي تحمل نفس رقم الفاتورة
-  const stmtReceipts = dbModule.db.prepare("DELETE FROM receipts WHERE invoice_no = ?");
-  const infoReceipts = stmtReceipts.run(invoiceNoNum);
-  // حذف من جدول rmb_expenses أيضاً
-  const stmtRmb = dbModule.db.prepare("DELETE FROM rmb_expenses WHERE invoice_no = ?");
-  const infoRmb = stmtRmb.run(invoiceNoNum);
-  // حذف كل بنود النقل المرتبطة بنفس رقم الفاتورة (invoice_no)
-  let deletedTransport = 0;
-  // أولاً: حذف كل بند نقل يحمل نفس رقم الفاتورة
-  const stmtTransportByInvoice = dbModule.db.prepare("DELETE FROM receipts WHERE invoice_no = ? AND type IN ('النقل', 'بند النقل')");
-  const infoTransportByInvoice = stmtTransportByInvoice.run(invoiceNoNum);
-  deletedTransport += infoTransportByInvoice.changes;
-  // ثانياً: حذف أي بند نقل قد يكون مرتبط بنفس الزبون والتاريخ (للتوافق مع الحالات القديمة)
-  const stmtTransportByCustomerDate = dbModule.db.prepare("DELETE FROM receipts WHERE customer_id = ? AND date = ? AND type IN ('النقل', 'بند النقل')");
-  for (const rec of receipts) {
-    const info = stmtTransportByCustomerDate.run(rec.customer_id, rec.date);
-    deletedTransport += info.changes;
-  }
-  // إضافة طباعة لرقم الفاتورة وعدد السطور المحذوفة
-  console.log(`[حذف فاتورة] invoiceNo: ${invoiceNoNum}, deleted_receipts: ${infoReceipts.changes}, deleted_rmb_expenses: ${infoRmb.changes}, deleted_transport: ${deletedTransport}`);
-  if (infoReceipts.changes > 0 || infoRmb.changes > 0 || deletedTransport > 0) {
-    return res.json({ ok: true, deleted_receipts: infoReceipts.changes, deleted_rmb_expenses: infoRmb.changes, deleted_transport });
-  } else {
-    return res.status(404).json({ message: "No receipts, transport items, or RMB expenses found for this invoice number." });
+  try {
+    const receipts = (await db.query("SELECT id, customer_id, date FROM receipts WHERE invoice_no = $1", [invoiceNoNum])).rows;
+    const infoReceipts = await db.query("DELETE FROM receipts WHERE invoice_no = $1", [invoiceNoNum]);
+    const infoRmb = await db.query("DELETE FROM rmb_expenses WHERE invoice_no = $1", [invoiceNoNum]);
+    let deletedTransport = 0;
+    const infoTransportByInvoice = await db.query("DELETE FROM receipts WHERE invoice_no = $1 AND type IN ('النقل', 'بند النقل')", [invoiceNoNum]);
+    deletedTransport += infoTransportByInvoice.rowCount;
+    for (const rec of receipts) {
+      const info = await db.query("DELETE FROM receipts WHERE customer_id = $1 AND date = $2 AND type IN ('النقل', 'بند النقل')", [rec.customer_id, rec.date]);
+      deletedTransport += info.rowCount;
+    }
+    console.log(`[حذف فاتورة] invoiceNo: ${invoiceNoNum}, deleted_receipts: ${infoReceipts.rowCount}, deleted_rmb_expenses: ${infoRmb.rowCount}, deleted_transport: ${deletedTransport}`);
+    if (infoReceipts.rowCount > 0 || infoRmb.rowCount > 0 || deletedTransport > 0) {
+      return res.json({ ok: true, deleted_receipts: infoReceipts.rowCount, deleted_rmb_expenses: infoRmb.rowCount, deleted_transport });
+    } else {
+      return res.status(404).json({ message: "No receipts, transport items, or RMB expenses found for this invoice number." });
+    }
+  } catch (err) {
+    return res.status(500).json({ message: "خطأ في حذف الفاتورة.", error: err.message });
   }
 });
 // Enable trust proxy to allow correct IP detection behind reverse proxies
@@ -184,19 +174,7 @@ const VIEWER_PASS = optionalEnv("VIEWER_PASS");
 const activeTokens = new Map();
 
 const USERS = [{ username: AUTH_USER, password: AUTH_PASS, role: "admin" }];
-// حذف أي مستخدم masanadmin من قاعدة البيانات عند بدء السيرفر لضمان اعتماد المستخدم من الكود فقط
-try {
-  const dbPath = require("path").resolve(__dirname, "./db.js");
-  const dbModule = require(dbPath);
-  if (dbModule && dbModule.db && dbModule.db.prepare) {
-    dbModule.db.prepare("DELETE FROM user_accounts WHERE username = ?").run("masanadmin");
-    // حذف كل السطور من جدول receipts التي تحمل رقم الفاتورة 1234568
-    const deleted = dbModule.db.prepare("DELETE FROM receipts WHERE invoice_no = ?").run(1234568);
-    if (deleted.changes > 0) {
-      console.log("[حذف تلقائي] تم حذف جميع السطور ذات رقم الفاتورة 1234568 من جدول receipts.");
-    }
-  }
-} catch (e) { /* تجاهل أي خطأ */ }
+
 USERS.push({ username: "masanadmin", password: "masanadmin", role: "admin" });
 // إضافة مستخدم masanadmin/masanadmin دائماً بغض النظر عن متغيرات البيئة
 USERS.push({ username: "masanadmin", password: "masanadmin", role: "admin" });
@@ -291,8 +269,8 @@ const parseStoredPermissions = (permissionsJson, role) => {
   }
 };
 
-const buildEffectiveUsers = () => {
-  const customUsers = db.listUserAccounts();
+const buildEffectiveUsers = async () => {
+  const customUsers = await db.listUserAccounts();
   const customByUsername = new Map(
     customUsers.map((entry) => [String(entry.username || "").trim().toLowerCase(), entry])
   );
@@ -329,9 +307,10 @@ const buildEffectiveUsers = () => {
   return effective;
 };
 
-const hasAnotherAdmin = (excludedUsername) => {
+const hasAnotherAdmin = async (excludedUsername) => {
   const target = String(excludedUsername || "").trim().toLowerCase();
-  return buildEffectiveUsers().some(
+  const effective = await buildEffectiveUsers();
+  return effective.some(
     (entry) => String(entry.username || "").trim().toLowerCase() !== target && entry.role === "admin"
   );
 };
@@ -427,35 +406,31 @@ const getFileExtension = (fileName, mimeType) => {
   return ".bin";
 };
 
-const writeAudit = (req, action, entityType, entityId, details) => {
-  try {
-    db.logAudit({
-      username: req.user?.username || req.user?.user || "unknown",
-      role: req.user?.role || "unknown",
-      action,
-      entityType,
-      entityId,
-      details,
-    });
-  } catch (err) {
-    // Do not fail request if audit write fails.
-  }
+const writeAudit = async (req, action, entityType, entityId, details) => {
+  await db.logAudit({
+    username: req.user?.username || req.user?.user || "unknown",
+    role: req.user?.role || "unknown",
+    action,
+    entityType,
+    entityId,
+    details,
+  }).catch(() => {});
 };
 
-const ensureDateUnlocked = (res, date) => {
-  if (db.isDateLocked(date)) {
+const ensureDateUnlocked = async (res, date) => {
+  if (await db.isDateLocked(date)) {
     res.status(409).json({ message: "هذا التاريخ مقفل ولا يمكن تعديل الحركات فيه." });
     return false;
   }
   return true;
 };
 
-const ensureDateEditable = (req, res, date) => {
-  if (!ensureDateUnlocked(res, date)) {
+const ensureDateEditable = async (req, res, date) => {
+  if (!await ensureDateUnlocked(res, date)) {
     return false;
   }
 
-  const closedMonth = db.isMonthClosed(date);
+  const closedMonth = await db.isMonthClosed(date);
   if (!closedMonth) {
     return true;
   }
@@ -476,7 +451,7 @@ const ensureDateEditable = (req, res, date) => {
   return false;
 };
 
-app.post("/api/auth/login", authLoginLimiter, (req, res) => {
+app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
   const rawUsername = String(req.body?.username || "");
   const rawPassword = String(req.body?.password || "");
   const username = rawUsername.trim();
@@ -484,7 +459,7 @@ app.post("/api/auth/login", authLoginLimiter, (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ message: "Username and password required." });
   }
-  const customAccount = db.getUserAccountByUsername(username);
+  const customAccount = await db.getUserAccountByUsername(username);
   let account = null;
   let permissions = null;
 
@@ -516,7 +491,7 @@ app.post("/api/auth/login", authLoginLimiter, (req, res) => {
   return res.json({ token, user: account.username, role: account.role, permissions });
 });
 
-app.post("/api/auth/logout", authMiddleware, (req, res) => {
+app.post("/api/auth/logout", authMiddleware, async (req, res) => {
   const token = getTokenFromRequest(req);
   if (token) {
     activeTokens.delete(token);
@@ -525,7 +500,7 @@ app.post("/api/auth/logout", authMiddleware, (req, res) => {
   return res.json({ ok: true });
 });
 
-app.get("/api/auth/me", authMiddleware, (req, res) => {
+app.get("/api/auth/me", authMiddleware, async (req, res) => {
   res.json({
     user: req.user?.username || "",
     role: req.user?.role || "viewer",
@@ -540,9 +515,9 @@ app.use("/api", (req, res, next) => {
 }, authMiddleware);
 
 // --- RMB Expenses & Ledger API ---
-app.get("/api/rmb-expenses", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+app.get("/api/rmb-expenses", requireRole(["admin", "accountant", "viewer"]), async (req, res) => {
   try {
-    const rows = db.db.prepare("SELECT * FROM rmb_expenses ORDER BY date DESC, id DESC").all();
+    const rows = (await db.query("SELECT * FROM rmb_expenses ORDER BY date DESC, id DESC")).rows;
     res.json(rows);
   } catch (err) {
     console.error("[rmb-expenses]", err.message);
@@ -550,27 +525,28 @@ app.get("/api/rmb-expenses", requireRole(["admin", "accountant", "viewer"]), (re
   }
 });
 
-app.post("/api/rmb-expenses", requireRole(["admin", "accountant"]), (req, res) => {
+app.post("/api/rmb-expenses", requireRole(["admin", "accountant"]), async (req, res) => {
   const { customerId, invoiceNo, date, amount, exchangeRate, details } = req.body || {};
   if (!customerId || !invoiceNo || !date || !amount || !exchangeRate) {
     return res.status(400).json({ message: "بيانات ناقصة." });
   }
   try {
-    const stmt = db.db.prepare("INSERT INTO rmb_expenses (customer_id, invoice_no, date, amount, exchange_rate, details) VALUES (?, ?, ?, ?, ?, ?)");
-    const info = stmt.run(customerId, invoiceNo, date, amount, exchangeRate, details || "");
-    res.status(201).json({ id: info.lastInsertRowid });
+    const result = await db.query(
+      "INSERT INTO rmb_expenses (customer_id, invoice_no, date, amount, exchange_rate, details, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING id",
+      [customerId, invoiceNo, date, amount, exchangeRate, details || ""]
+    );
+    res.status(201).json({ id: result.rows[0].id });
   } catch (err) {
     res.status(500).json({ message: "فشل في إضافة مصروف الرممبي." });
   }
 });
 
-app.delete("/api/rmb-expenses/:id", requireRole(["admin"]), (req, res) => {
+app.delete("/api/rmb-expenses/:id", requireRole(["admin"]), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ message: "معرّف غير صالح." });
   try {
-    const stmt = db.db.prepare("DELETE FROM rmb_expenses WHERE id = ?");
-    const info = stmt.run(id);
-    if (info.changes > 0) {
+    const result = await db.query("DELETE FROM rmb_expenses WHERE id = $1", [id]);
+    if (result.rowCount > 0) {
       res.json({ ok: true });
     } else {
       res.status(404).json({ message: "لم يتم العثور على المصروف." });
@@ -580,36 +556,34 @@ app.delete("/api/rmb-expenses/:id", requireRole(["admin"]), (req, res) => {
   }
 });
 
-app.get("/api/rmb-ledger", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
-  const currencyTo = req.query.currencyTo || "يوان";
+app.get("/api/rmb-ledger", requireRole(["admin", "accountant", "viewer"]), async (req, res) => {
   try {
-    const rows = db.db.prepare("SELECT * FROM rmb_expenses WHERE exchange_rate IS NOT NULL AND amount IS NOT NULL ORDER BY date DESC, id DESC").all();
+    const rows = (await db.query("SELECT * FROM rmb_expenses WHERE exchange_rate IS NOT NULL AND amount IS NOT NULL ORDER BY date DESC, id DESC")).rows;
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: "خطأ في جلب دفتر الرممبي." });
   }
 });
 
-app.get("/api/rmb-transfers", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+app.get("/api/rmb-transfers", requireRole(["admin", "accountant", "viewer"]), async (req, res) => {
   try {
-    const rows = db.db.prepare("SELECT * FROM rmb_expenses ORDER BY date DESC, id DESC").all();
+    const rows = (await db.query("SELECT * FROM rmb_expenses ORDER BY date DESC, id DESC")).rows;
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: "خطأ في جلب تحويلات الرممبي." });
   }
 });
 
-app.get("/api/system/permissions", requireRole(["admin"]), (req, res) => {
+app.get("/api/system/permissions", requireRole(["admin"]), async (req, res) => {
   return res.json({
     permissions: ALL_PERMISSIONS,
     roleDefaults: ROLE_PERMISSIONS,
   });
 });
 
-app.get("/api/system/users", requireRole(["admin"]), (req, res) => {
+app.get("/api/system/users", requireRole(["admin"]), async (req, res) => {
   const customByUsername = new Map(
-    db
-      .listUserAccounts()
+    (await db.listUserAccounts())
       .map((entry) => [String(entry.username || "").trim().toLowerCase(), entry])
   );
 
@@ -656,7 +630,7 @@ app.get("/api/system/users", requireRole(["admin"]), (req, res) => {
   return res.json(users);
 });
 
-app.post("/api/system/users", requireRole(["admin"]), (req, res) => {
+app.post("/api/system/users", requireRole(["admin"]), async (req, res) => {
   const username = String(req.body?.username || "").trim().toLowerCase();
   const password = String(req.body?.password || "").trim();
   const role = String(req.body?.role || "viewer").trim();
@@ -670,11 +644,11 @@ app.post("/api/system/users", requireRole(["admin"]), (req, res) => {
     return res.status(400).json({ message: "Invalid role." });
   }
 
-  const existing = db.getUserAccountByUsername(username);
+  const existing = await db.getUserAccountByUsername(username);
   const systemUser = USERS.find((entry) => String(entry.username || "").trim().toLowerCase() === username);
   const currentRole = existing?.role || systemUser?.role || null;
 
-  if (currentRole === "admin" && role !== "admin" && !hasAnotherAdmin(username)) {
+  if (currentRole === "admin" && role !== "admin" && !await hasAnotherAdmin(username)) {
     return res.status(400).json({ message: "Cannot remove admin role from the last admin user." });
   }
 
@@ -684,7 +658,7 @@ app.post("/api/system/users", requireRole(["admin"]), (req, res) => {
 
   const permissions = normalizePermissionsInput(req.body?.permissions || {}, role);
   try {
-    const result = db.upsertUserAccount({ username, password, role, permissions });
+    const result = await db.upsertUserAccount({ username, password, role, permissions });
     writeAudit(req, result.created ? "create" : "update", "user-account", username, {
       role,
       permissions,
@@ -695,7 +669,7 @@ app.post("/api/system/users", requireRole(["admin"]), (req, res) => {
   }
 });
 
-app.delete("/api/system/users/:username", requireRole(["admin"]), (req, res) => {
+app.delete("/api/system/users/:username", requireRole(["admin"]), async (req, res) => {
   const username = String(req.params.username || "").trim().toLowerCase();
   if (!username) {
     return res.status(400).json({ message: "Username is required." });
@@ -704,7 +678,7 @@ app.delete("/api/system/users/:username", requireRole(["admin"]), (req, res) => 
     return res.status(400).json({ message: "Cannot delete current logged-in user." });
   }
 
-  const customUser = db.getUserAccountByUsername(username);
+  const customUser = await db.getUserAccountByUsername(username);
   const systemUserIndex = USERS.findIndex((entry) => String(entry.username || "").trim().toLowerCase() === username);
   const effectiveRole = customUser?.role || (systemUserIndex >= 0 ? USERS[systemUserIndex].role : null);
 
@@ -712,11 +686,11 @@ app.delete("/api/system/users/:username", requireRole(["admin"]), (req, res) => 
     return res.status(404).json({ message: "User not found." });
   }
 
-  if (effectiveRole === "admin" && !hasAnotherAdmin(username)) {
+  if (effectiveRole === "admin" && !await hasAnotherAdmin(username)) {
     return res.status(400).json({ message: "Cannot delete the last admin user." });
   }
 
-  const removedCustom = db.deleteUserAccount(username);
+  const removedCustom = await db.deleteUserAccount(username);
   let removedSystem = false;
   if (systemUserIndex >= 0) {
     USERS.splice(systemUserIndex, 1);
@@ -731,7 +705,7 @@ app.delete("/api/system/users/:username", requireRole(["admin"]), (req, res) => 
   return res.json({ ok: true });
 });
 
-app.post("/api/attachments/upload", attachmentUploadLimiter, requireRole(["admin", "accountant"]), (req, res) => {
+app.post("/api/attachments/upload", attachmentUploadLimiter, requireRole(["admin", "accountant"]), async (req, res) => {
   const fileName = sanitizeAttachmentName(req.body?.fileName || "");
   const mimeType = String(req.body?.mimeType || "application/octet-stream").trim().toLowerCase();
   const dataBase64 = String(req.body?.dataBase64 || "").trim();
@@ -779,20 +753,20 @@ app.post("/api/attachments/upload", attachmentUploadLimiter, requireRole(["admin
   });
 });
 
-app.get("/api/customers", (req, res) => {
-  res.json(db.listCustomers());
+app.get("/api/customers", async (req, res) => {
+  res.json(await db.listCustomers());
 });
 
-app.get("/api/customers/next-code", (req, res) => {
-  res.json({ nextCode: db.getNextCustomerCode() });
+app.get("/api/customers/next-code", async (req, res) => {
+  res.json({ nextCode: await db.getNextCustomerCode() });
 });
 
-app.post("/api/customers", requireRole(["admin", "accountant"]), (req, res) => {
+app.post("/api/customers", requireRole(["admin", "accountant"]), async (req, res) => {
   const { name, phone, address, initialBalance } = req.body || {};
   if (!name || !name.trim()) {
     return res.status(400).json({ message: "Customer name is required." });
   }
-  const exists = db.findCustomerByNameNorm(name.trim().toLowerCase());
+  const exists = await db.findCustomerByNameNorm(name.trim().toLowerCase());
   if (exists) {
     return res.status(409).json({ message: "Customer name already exists." });
   }
@@ -800,18 +774,18 @@ app.post("/api/customers", requireRole(["admin", "accountant"]), (req, res) => {
   if (Number.isNaN(balanceValue)) {
     return res.status(400).json({ message: "Initial balance must be a number." });
   }
-  const result = db.insertCustomer({ name, phone, address, initialBalance: balanceValue });
+  const result = await db.insertCustomer({ name, phone, address, initialBalance: balanceValue });
   writeAudit(req, "create", "customer", result.id, { name: name.trim() });
   return res.status(201).json(result);
 });
 
-app.put("/api/customers/:id", requireRole(["admin", "accountant"]), (req, res) => {
+app.put("/api/customers/:id", requireRole(["admin", "accountant"]), async (req, res) => {
   const id = Number(req.params.id);
   const { name, phone, address, initialBalance } = req.body || {};
   if (!id || !name || !name.trim()) {
     return res.status(400).json({ message: "Invalid customer data." });
   }
-  const exists = db.findCustomerByNameNorm(name.trim().toLowerCase(), id);
+  const exists = await db.findCustomerByNameNorm(name.trim().toLowerCase(), id);
   if (exists) {
     return res.status(409).json({ message: "Customer name already exists." });
   }
@@ -819,7 +793,7 @@ app.put("/api/customers/:id", requireRole(["admin", "accountant"]), (req, res) =
   if (Number.isNaN(balanceValue)) {
     return res.status(400).json({ message: "Initial balance must be a number." });
   }
-  const updated = db.updateCustomer({ id, name, phone, address, initialBalance: balanceValue });
+  const updated = await db.updateCustomer({ id, name, phone, address, initialBalance: balanceValue });
   if (!updated) {
     return res.status(404).json({ message: "Customer not found." });
   }
@@ -827,12 +801,12 @@ app.put("/api/customers/:id", requireRole(["admin", "accountant"]), (req, res) =
   return res.json({ ok: true });
 });
 
-app.delete("/api/customers/:id", requireRole(["admin"]), (req, res) => {
+app.delete("/api/customers/:id", requireRole(["admin"]), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) {
     return res.status(400).json({ message: "Invalid customer id." });
   }
-  const removed = db.deleteCustomer(id);
+  const removed = await db.deleteCustomer(id);
   if (!removed) {
     return res.status(404).json({ message: "Customer not found." });
   }
@@ -840,19 +814,19 @@ app.delete("/api/customers/:id", requireRole(["admin"]), (req, res) => {
   return res.json({ ok: true });
 });
 
-app.get("/api/receipts", (req, res) => {
+app.get("/api/receipts", async (req, res) => {
   const customerId = Number(req.query.customerId);
   if (!customerId) {
     return res.status(400).json({ message: "Customer id required." });
   }
-  res.json(db.listReceiptsByCustomer(customerId));
+  res.json(await db.listReceiptsByCustomer(customerId));
 });
 
-app.get("/api/receipts/next-invoice", (req, res) => {
-  res.json({ nextInvoiceNo: db.getNextInvoiceNo() });
+app.get("/api/receipts/next-invoice", async (req, res) => {
+  res.json({ nextInvoiceNo: await db.getNextInvoiceNo() });
 });
 
-app.post("/api/receipts", requireRole(["admin", "accountant"]), (req, res) => {
+app.post("/api/receipts", requireRole(["admin", "accountant"]), async (req, res) => {
   const {
     senderCustomerId,
     receiverCustomerId,
@@ -885,7 +859,7 @@ app.post("/api/receipts", requireRole(["admin", "accountant"]), (req, res) => {
   }
 
   if (!req.body?.bypassDuplicateCheck) {
-    const similar = db.findSimilarReceipt({ customerId: senderId, date, type, amount: numericAmount });
+    const similar = await db.findSimilarReceipt({ customerId: senderId, date, type, amount: numericAmount });
     if (similar) {
       return res.status(409).json({
         code: "SIMILAR_RECEIPT",
@@ -895,16 +869,16 @@ app.post("/api/receipts", requireRole(["admin", "accountant"]), (req, res) => {
     }
   }
 
-  const sender = db.getCustomerById(senderId);
+  const sender = await db.getCustomerById(senderId);
   if (!sender) {
     return res.status(404).json({ message: "Sender not found." });
   }
-  const receiver = receiverId ? db.getCustomerById(receiverId) : null;
+  const receiver = receiverId ? await db.getCustomerById(receiverId) : null;
   if (receiverId && !receiver) {
     return res.status(404).json({ message: "Receiver not found." });
   }
 
-  const senderReceipt = db.insertReceipt({
+  const senderReceipt = await db.insertReceipt({
     customerId: senderId,
     date,
     type,
@@ -918,7 +892,7 @@ app.post("/api/receipts", requireRole(["admin", "accountant"]), (req, res) => {
   });
 
   const receiverReceipt = receiver
-    ? db.insertReceipt({
+    ? await db.insertReceipt({
         customerId: receiver.id,
         date,
         type,
@@ -943,7 +917,7 @@ app.post("/api/receipts", requireRole(["admin", "accountant"]), (req, res) => {
   return res.status(201).json({ senderReceipt, receiverReceipt });
 });
 
-app.put("/api/receipts/:id", requireRole(["admin", "accountant"]), (req, res) => {
+app.put("/api/receipts/:id", requireRole(["admin", "accountant"]), async (req, res) => {
   const id = Number(req.params.id);
   const {
     customerId,
@@ -962,7 +936,7 @@ app.put("/api/receipts/:id", requireRole(["admin", "accountant"]), (req, res) =>
     return res.status(400).json({ message: "Missing receipt data." });
   }
 
-  const existingReceipt = db.getReceiptById(id);
+  const existingReceipt = await db.getReceiptById(id);
   if (!existingReceipt) {
     return res.status(404).json({ message: "Receipt not found." });
   }
@@ -981,12 +955,12 @@ app.put("/api/receipts/:id", requireRole(["admin", "accountant"]), (req, res) =>
     return res.status(400).json({ message: "Amount must be non-zero." });
   }
 
-  const customer = db.getCustomerById(customerIdNum);
+  const customer = await db.getCustomerById(customerIdNum);
   if (!customer) {
     return res.status(404).json({ message: "Customer not found." });
   }
 
-  const updated = db.updateReceipt({
+  const updated = await db.updateReceipt({
     id,
     customerId: customerIdNum,
     date,
@@ -1014,7 +988,7 @@ app.put("/api/receipts/:id", requireRole(["admin", "accountant"]), (req, res) =>
   return res.json({ ok: true });
 });
 
-app.post("/api/receipts/transport-item", requireRole(["admin", "accountant"]), (req, res) => {
+app.post("/api/receipts/transport-item", requireRole(["admin", "accountant"]), async (req, res) => {
   const { customerId, date, amount, details, invoiceNo } = req.body || {};
 
   const customerIdNum = Number(customerId);
@@ -1034,18 +1008,18 @@ app.post("/api/receipts/transport-item", requireRole(["admin", "accountant"]), (
     return res.status(400).json({ message: "Invalid invoice number." });
   }
 
-  const customer = db.getCustomerById(customerIdNum);
+  const customer = await db.getCustomerById(customerIdNum);
   if (!customer) {
     return res.status(404).json({ message: "Customer not found." });
   }
 
   const safeDetails = details ? String(details).trim() : "";
-  if (db.existsTransportItemDuplicate({ customerId: customerIdNum, date, amount: Math.abs(numericAmount), details: safeDetails })) {
+  if (await db.existsTransportItemDuplicate({ customerId: customerIdNum, date, amount: Math.abs(numericAmount), details: safeDetails })) {
     return res.status(409).json({ message: "Duplicate transport item already exists." });
   }
 
   try {
-    const receipt = db.insertReceipt({
+    const receipt = await db.insertReceipt({
       customerId: customerIdNum,
       date,
       type: "النقل",
@@ -1070,17 +1044,17 @@ app.post("/api/receipts/transport-item", requireRole(["admin", "accountant"]), (
   }
 });
 
-app.get("/api/transfers", requireRole(["admin", "accountant", "viewer"]), (req, res) => {
+app.get("/api/transfers", requireRole(["admin", "accountant", "viewer"]), async (req, res) => {
   try {
     const customerId = req.query.customerId ? Number(req.query.customerId) : null;
-    const rows = db.listTransfers(customerId);
+    const rows = await db.listTransfers(customerId);
     return res.json(rows);
   } catch (err) {
     return res.status(500).json({ message: "Failed to fetch transfers.", error: err.message });
   }
 });
 
-app.post("/api/transfers", requireRole(["admin", "accountant"]), (req, res) => {
+app.post("/api/transfers", requireRole(["admin", "accountant"]), async (req, res) => {
   const {
     senderCustomerId,
     receiverCustomerId,
@@ -1121,7 +1095,7 @@ app.post("/api/transfers", requireRole(["admin", "accountant"]), (req, res) => {
   }
 
   if (!req.body?.bypassDuplicateCheck) {
-    const similar = db.findSimilarTransfer({
+    const similar = await db.findSimilarTransfer({
       senderId,
       receiverId,
       date,
@@ -1138,7 +1112,7 @@ app.post("/api/transfers", requireRole(["admin", "accountant"]), (req, res) => {
   }
 
   try {
-    const result = db.insertTransfer({
+    const result = await db.insertTransfer({
       senderId,
       receiverId,
       date,
@@ -1148,8 +1122,8 @@ app.post("/api/transfers", requireRole(["admin", "accountant"]), (req, res) => {
       currencyFrom: currencyFrom.trim(),
       currencyTo: currencyTo.trim(),
     });
-    const sender = db.getCustomerById(senderId);
-    const receiver = db.getCustomerById(receiverId);
+    const sender = await db.getCustomerById(senderId);
+    const receiver = await db.getCustomerById(receiverId);
     writeAudit(req, "create", "transfer", result.id, {
       senderId,
       receiverId,
@@ -1163,7 +1137,7 @@ app.post("/api/transfers", requireRole(["admin", "accountant"]), (req, res) => {
   }
 });
 
-app.put("/api/transfers/:id", requireRole(["admin", "accountant"]), (req, res) => {
+app.put("/api/transfers/:id", requireRole(["admin", "accountant"]), async (req, res) => {
   const id = Number(req.params.id);
   const {
     senderCustomerId,
@@ -1182,7 +1156,7 @@ app.put("/api/transfers/:id", requireRole(["admin", "accountant"]), (req, res) =
   if (!id || !senderId || !receiverId || !date) {
     return res.status(400).json({ message: "Missing transfer data." });
   }
-  const existingTransferDate = db.getTransferDateById(id);
+  const existingTransferDate = await db.getTransferDateById(id);
   if (!existingTransferDate) {
     return res.status(404).json({ message: "Transfer not found." });
   }
@@ -1209,7 +1183,7 @@ app.put("/api/transfers/:id", requireRole(["admin", "accountant"]), (req, res) =
   }
 
   try {
-    const updated = db.updateTransfer({
+    const updated = await db.updateTransfer({
       id,
       senderId,
       receiverId,
@@ -1223,8 +1197,8 @@ app.put("/api/transfers/:id", requireRole(["admin", "accountant"]), (req, res) =
     if (!updated) {
       return res.status(404).json({ message: "Transfer not found." });
     }
-    const sender = db.getCustomerById(senderId);
-    const receiver = db.getCustomerById(receiverId);
+    const sender = await db.getCustomerById(senderId);
+    const receiver = await db.getCustomerById(receiverId);
     writeAudit(req, "update", "transfer", id, {
       senderId,
       receiverId,
@@ -1238,19 +1212,19 @@ app.put("/api/transfers/:id", requireRole(["admin", "accountant"]), (req, res) =
   }
 });
 
-app.delete("/api/receipts/:id", requirePermission("delete_records"), (req, res) => {
+app.delete("/api/receipts/:id", requirePermission("delete_records"), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) {
     return res.status(400).json({ message: "Invalid receipt id." });
   }
-  const receipt = db.getReceiptById(id);
+  const receipt = await db.getReceiptById(id);
   if (!receipt) {
     return res.status(404).json({ message: "Receipt not found." });
   }
   if (!ensureDateEditable(req, res, receipt.date)) {
     return;
   }
-  const removed = db.deleteReceipt(id);
+  const removed = await db.deleteReceipt(id);
   if (!removed) {
     return res.status(404).json({ message: "Receipt not found." });
   }
@@ -1262,19 +1236,19 @@ app.delete("/api/receipts/:id", requirePermission("delete_records"), (req, res) 
   return res.json({ ok: true });
 });
 
-app.delete("/api/transfers/:id", requirePermission("delete_records"), (req, res) => {
+app.delete("/api/transfers/:id", requirePermission("delete_records"), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) {
     return res.status(400).json({ message: "Invalid transfer id." });
   }
-  const transfer = db.getTransferById(id);
+  const transfer = await db.getTransferById(id);
   if (!transfer) {
     return res.status(404).json({ message: "Transfer not found." });
   }
   if (!ensureDateEditable(req, res, transfer.date)) {
     return;
   }
-  const removed = db.deleteTransfer(id);
+  const removed = await db.deleteTransfer(id);
   if (!removed) {
     return res.status(404).json({ message: "Transfer not found." });
   }
@@ -1286,11 +1260,11 @@ app.delete("/api/transfers/:id", requirePermission("delete_records"), (req, res)
   return res.json({ ok: true });
 });
 
-app.get("/api/dashboard/summary", (req, res) => {
-  res.json(db.getDashboardSummary());
+app.get("/api/dashboard/summary", async (req, res) => {
+  res.json(await db.getDashboardSummary());
 });
 
-app.get("/api/alerts/center", requirePermission("alerts_view"), (req, res) => {
+app.get("/api/alerts/center", requirePermission("alerts_view"), async (req, res) => {
   let backupsCount = 0;
   try {
     if (fs.existsSync(backupsDir)) {
@@ -1300,14 +1274,14 @@ app.get("/api/alerts/center", requirePermission("alerts_view"), (req, res) => {
     backupsCount = 0;
   }
 
-  const negativeBalances = db.listNegativeBalances();
-  const positiveBalances = db.listPositiveBalances();
-  const locks = db.listLocks();
+  const negativeBalances = await db.listNegativeBalances();
+  const positiveBalances = await db.listPositiveBalances();
+  const locks = await db.listLocks();
   const recentAudit = req.user?.permissions?.audit_view
-    ? db.listAuditLogs({ limit: 10 })
+    ? await db.listAuditLogs({ limit: 10 })
     : [];
 
-  const auditForSensitiveDetection = db.listAuditLogs({ limit: 200 });
+  const auditForSensitiveDetection = await db.listAuditLogs({ limit: 200 });
   let sensitiveLargeDeletes = 0;
   const updateBurstByUser = new Map();
   const tenMinutesMs = 10 * 60 * 1000;
@@ -1400,16 +1374,16 @@ app.get("/api/alerts/center", requirePermission("alerts_view"), (req, res) => {
   });
 });
 
-app.get("/api/dashboard/collection-priority", (req, res) => {
+app.get("/api/dashboard/collection-priority", async (req, res) => {
   const limit = req.query.limit ? Number(req.query.limit) : 10;
-  res.json(db.getCollectionPriority(limit));
+  res.json(await db.getCollectionPriority(limit));
 });
 
-app.get("/api/alerts/negative-balances", (req, res) => {
-  res.json(db.listNegativeBalances());
+app.get("/api/alerts/negative-balances", async (req, res) => {
+  res.json(await db.listNegativeBalances());
 });
 
-app.get("/api/kpi/monthly", requirePermission("kpi_view"), (req, res) => {
+app.get("/api/kpi/monthly", requirePermission("kpi_view"), async (req, res) => {
   const month = String(req.query.month || "").trim();
   const baseMonth = /^\d{4}-\d{2}$/.test(month)
     ? month
@@ -1417,16 +1391,16 @@ app.get("/api/kpi/monthly", requirePermission("kpi_view"), (req, res) => {
   const [year, m] = baseMonth.split("-").map(Number);
   const prevDate = new Date(year, m - 2, 1);
   const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
-  const current = db.getMonthlyKpis({ month: baseMonth });
-  const previous = db.getMonthlyKpis({ month: prevMonth });
+  const current = await db.getMonthlyKpis({ month: baseMonth });
+  const previous = await db.getMonthlyKpis({ month: prevMonth });
   return res.json({ current, previous });
 });
 
-app.get("/api/audit-logs", requirePermission("audit_view"), (req, res) => {
+app.get("/api/audit-logs", requirePermission("audit_view"), async (req, res) => {
   const { username, action, entityType, detailsLike, from, to } = req.query || {};
   const limit = req.query.limit ? Number(req.query.limit) : 200;
   res.json(
-    db.listAuditLogs({
+    await db.listAuditLogs({
       limit,
       username: username ? String(username).trim() : "",
       action: action ? String(action).trim() : "",
@@ -1438,14 +1412,14 @@ app.get("/api/audit-logs", requirePermission("audit_view"), (req, res) => {
   );
 });
 
-app.get("/api/reports/monthly-auto", requirePermission("export_reports"), (req, res) => {
+app.get("/api/reports/monthly-auto", requirePermission("export_reports"), async (req, res) => {
   const month = String(req.query.month || "").trim();
   const safeMonth = /^\d{4}-\d{2}$/.test(month) ? month : new Date().toISOString().slice(0, 7);
   const from = `${safeMonth}-01`;
   const to = `${safeMonth}-31`;
 
-  const kpi = db.getMonthlyKpis({ month: safeMonth });
-  const sales = db.listSalesReport({ from, to, customerId: null });
+  const kpi = await db.getMonthlyKpis({ month: safeMonth });
+  const sales = await db.listSalesReport({ from, to, customerId: null });
   const perCustomerMap = new Map();
   (sales.rows || []).forEach((row) => {
     const key = row.customer_name || "غير معروف";
@@ -1467,26 +1441,26 @@ app.get("/api/reports/monthly-auto", requirePermission("export_reports"), (req, 
   });
 });
 
-app.get("/api/locks", requirePermission("locks_manage"), (req, res) => {
-  res.json(db.listLocks());
+app.get("/api/locks", requirePermission("locks_manage"), async (req, res) => {
+  res.json(await db.listLocks());
 });
 
-app.get("/api/monthly-closes", requirePermission("monthly_close"), (req, res) => {
-  return res.json(db.listMonthlyCloses());
+app.get("/api/monthly-closes", requirePermission("monthly_close"), async (req, res) => {
+  return res.json(await db.listMonthlyCloses());
 });
 
-app.post("/api/monthly-closes", requirePermission("monthly_close"), (req, res) => {
+app.post("/api/monthly-closes", requirePermission("monthly_close"), async (req, res) => {
   const month = String(req.body?.month || "").trim();
   const reason = String(req.body?.reason || "").trim();
   if (!/^\d{4}-\d{2}$/.test(month)) {
     return res.status(400).json({ message: "Invalid month format. Use YYYY-MM." });
   }
-  const exists = db.listMonthlyCloses().find((item) => item.month === month);
+  const exists = await db.listMonthlyCloses().find((item) => item.month === month);
   if (exists) {
     return res.status(409).json({ message: "This month is already closed." });
   }
-  const snapshot = db.createBackupSnapshot();
-  const created = db.createMonthlyClose({
+  const snapshot = await db.createBackupSnapshot();
+  const created = await db.createMonthlyClose({
     month,
     reason,
     closedBy: req.user?.username || "unknown",
@@ -1496,7 +1470,7 @@ app.post("/api/monthly-closes", requirePermission("monthly_close"), (req, res) =
   return res.status(201).json(created);
 });
 
-app.delete("/api/monthly-closes/:id", requirePermission("monthly_override"), (req, res) => {
+app.delete("/api/monthly-closes/:id", requirePermission("monthly_override"), async (req, res) => {
   const id = Number(req.params.id);
   const reason = String(req.query?.overrideReason || req.body?.overrideReason || "").trim();
   if (!id) {
@@ -1505,7 +1479,7 @@ app.delete("/api/monthly-closes/:id", requirePermission("monthly_override"), (re
   if (!reason) {
     return res.status(400).json({ message: "overrideReason is required." });
   }
-  const removed = db.deleteMonthlyClose(id);
+  const removed = await db.deleteMonthlyClose(id);
   if (!removed) {
     return res.status(404).json({ message: "Monthly close not found." });
   }
@@ -1513,13 +1487,13 @@ app.delete("/api/monthly-closes/:id", requirePermission("monthly_override"), (re
   return res.json({ ok: true });
 });
 
-app.post("/api/locks/daily", requirePermission("locks_manage"), (req, res) => {
+app.post("/api/locks/daily", requirePermission("locks_manage"), async (req, res) => {
   const date = String(req.body?.date || "").trim();
   const reason = String(req.body?.reason || "Daily lock").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
   }
-  const created = db.createDailyLock({
+  const created = await db.createDailyLock({
     date,
     reason,
     lockedBy: req.user?.username || "unknown",
@@ -1528,12 +1502,12 @@ app.post("/api/locks/daily", requirePermission("locks_manage"), (req, res) => {
   return res.status(201).json(created);
 });
 
-app.delete("/api/locks/:id", requirePermission("locks_manage"), (req, res) => {
+app.delete("/api/locks/:id", requirePermission("locks_manage"), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) {
     return res.status(400).json({ message: "Invalid lock id." });
   }
-  const removed = db.removeLock(id);
+  const removed = await db.removeLock(id);
   if (!removed) {
     return res.status(404).json({ message: "Lock not found." });
   }
@@ -1541,20 +1515,20 @@ app.delete("/api/locks/:id", requirePermission("locks_manage"), (req, res) => {
   return res.json({ ok: true });
 });
 
-app.get("/api/ledger", (req, res) => {
+app.get("/api/ledger", async (req, res) => {
   const customerId = Number(req.query.customerId);
   const { from, to } = req.query;
   if (!customerId) {
     return res.status(400).json({ message: "Customer id required." });
   }
-  const data = db.getLedger({ customerId, from, to });
+  const data = await db.getLedger({ customerId, from, to });
   const initialDate =
-    from || db.getEarliestReceiptDate(customerId) || new Date().toISOString().slice(0, 10);
+    from || await db.getEarliestReceiptDate(customerId) || new Date().toISOString().slice(0, 10);
   data.entries.unshift({
     invoice_no: "-",
     date: initialDate,
     type: "رصيد افتتاحي",
-    amount: db.getCustomerInitialBalance(customerId),
+    amount: await db.getCustomerInitialBalance(customerId),
     sender_name: "-",
     receiver_name: "-",
     details: "رصيد افتتاحي",
@@ -1563,25 +1537,25 @@ app.get("/api/ledger", (req, res) => {
   res.json(data);
 });
 
-app.get("/api/customers/:id/timeline", requirePermission("timeline_view"), (req, res) => {
+app.get("/api/customers/:id/timeline", requirePermission("timeline_view"), async (req, res) => {
   const customerId = Number(req.params.id);
   const limit = req.query.limit ? Number(req.query.limit) : 300;
   if (!customerId) {
     return res.status(400).json({ message: "Invalid customer id." });
   }
-  if (!db.getCustomerById(customerId)) {
+  if (!await db.getCustomerById(customerId)) {
     return res.status(404).json({ message: "Customer not found." });
   }
-  return res.json(db.getCustomerTimeline({ customerId, limit }));
+  return res.json(await db.getCustomerTimeline({ customerId, limit }));
 });
 
-app.get("/api/sales-report", (req, res) => {
+app.get("/api/sales-report", async (req, res) => {
   const { from, to, customerId } = req.query || {};
   const customerIdNum = customerId ? Number(customerId) : null;
   if (customerId && (!customerIdNum || Number.isNaN(customerIdNum))) {
     return res.status(400).json({ message: "Invalid customer id." });
   }
-  const data = db.listSalesReport({
+  const data = await db.listSalesReport({
     from: from ? String(from).trim() : "",
     to: to ? String(to).trim() : "",
     customerId: customerIdNum,
@@ -1589,7 +1563,7 @@ app.get("/api/sales-report", (req, res) => {
   return res.json(data);
 });
 
-app.get("/api/budget", (req, res) => {
+app.get("/api/budget", async (req, res) => {
   const { periodType, periodValue, customerId } = req.query || {};
   if (!periodType || !periodValue) {
     return res.status(400).json({ message: "Period type and value are required." });
@@ -1603,7 +1577,7 @@ app.get("/api/budget", (req, res) => {
     return res.status(400).json({ message: "Invalid customer id." });
   }
   const periodVal = String(periodValue).trim();
-  const data = db.listBudget({
+  const data = await db.listBudget({
     periodType: normalizedType,
     periodValue: periodVal,
     customerId: customerIdNum,
@@ -1623,8 +1597,8 @@ app.get("/api/budget", (req, res) => {
     if (/^\d{4}-\d{2}$/.test(periodVal)) {
       const start = `${periodVal}-01`;
       const end = `${periodVal}-31`;
-      actuals = db.getBudgetActuals({ startDate: start, endDate: end, customerId: customerIdNum });
-      actualsByCategory = db.getBudgetActualsByCategory({
+      actuals = await db.getBudgetActuals({ startDate: start, endDate: end, customerId: customerIdNum });
+      actualsByCategory = await db.getBudgetActualsByCategory({
         startDate: start,
         endDate: end,
         typeMap: receiptTypeCategoryMap,
@@ -1634,8 +1608,8 @@ app.get("/api/budget", (req, res) => {
   } else if (/^\d{4}$/.test(periodVal)) {
     const start = `${periodVal}-01-01`;
     const end = `${periodVal}-12-31`;
-    actuals = db.getBudgetActuals({ startDate: start, endDate: end, customerId: customerIdNum });
-    actualsByCategory = db.getBudgetActualsByCategory({
+    actuals = await db.getBudgetActuals({ startDate: start, endDate: end, customerId: customerIdNum });
+    actualsByCategory = await db.getBudgetActualsByCategory({
       startDate: start,
       endDate: end,
       typeMap: receiptTypeCategoryMap,
@@ -1646,7 +1620,7 @@ app.get("/api/budget", (req, res) => {
   return res.json({ ...data, actuals, actualsByCategory });
 });
 
-app.post("/api/budget", requireRole(["admin", "accountant"]), (req, res) => {
+app.post("/api/budget", requireRole(["admin", "accountant"]), async (req, res) => {
   const { periodType, periodValue, category, kind, amount, notes, customerId } = req.body || {};
   const normalizedType = String(periodType || "").trim().toLowerCase();
   const normalizedKind = String(kind || "").trim().toLowerCase();
@@ -1667,11 +1641,11 @@ app.post("/api/budget", requireRole(["admin", "accountant"]), (req, res) => {
   if (customerId && (!customerIdNum || Number.isNaN(customerIdNum))) {
     return res.status(400).json({ message: "Invalid customer id." });
   }
-  if (customerIdNum && !db.getCustomerById(customerIdNum)) {
+  if (customerIdNum && !await db.getCustomerById(customerIdNum)) {
     return res.status(404).json({ message: "Customer not found." });
   }
 
-  const result = db.insertBudget({
+  const result = await db.insertBudget({
     customerId: customerIdNum,
     periodType: normalizedType,
     periodValue: String(periodValue).trim(),
@@ -1684,7 +1658,7 @@ app.post("/api/budget", requireRole(["admin", "accountant"]), (req, res) => {
   return res.status(201).json(result);
 });
 
-app.put("/api/budget/:id", requireRole(["admin", "accountant"]), (req, res) => {
+app.put("/api/budget/:id", requireRole(["admin", "accountant"]), async (req, res) => {
   const id = Number(req.params.id);
   const { periodType, periodValue, category, kind, amount, notes, customerId } = req.body || {};
   if (!id) {
@@ -1709,11 +1683,11 @@ app.put("/api/budget/:id", requireRole(["admin", "accountant"]), (req, res) => {
   if (customerId && (!customerIdNum || Number.isNaN(customerIdNum))) {
     return res.status(400).json({ message: "Invalid customer id." });
   }
-  if (customerIdNum && !db.getCustomerById(customerIdNum)) {
+  if (customerIdNum && !await db.getCustomerById(customerIdNum)) {
     return res.status(404).json({ message: "Customer not found." });
   }
 
-  const updated = db.updateBudget({
+  const updated = await db.updateBudget({
     id,
     customerId: customerIdNum,
     periodType: normalizedType,
@@ -1730,12 +1704,12 @@ app.put("/api/budget/:id", requireRole(["admin", "accountant"]), (req, res) => {
   return res.json({ ok: true });
 });
 
-app.delete("/api/budget/:id", requireRole(["admin"]), (req, res) => {
+app.delete("/api/budget/:id", requireRole(["admin"]), async (req, res) => {
   const id = Number(req.params.id);
   if (!id) {
     return res.status(400).json({ message: "Invalid budget id." });
   }
-  const removed = db.deleteBudget(id);
+  const removed = await db.deleteBudget(id);
   if (!removed) {
     return res.status(404).json({ message: "Budget item not found." });
   }
@@ -1743,36 +1717,37 @@ app.delete("/api/budget/:id", requireRole(["admin"]), (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post("/api/import/customers", requirePermission("import_data"), (req, res) => {
+app.post("/api/import/customers", requirePermission("import_data"), async (req, res) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
   if (!rows.length) {
     return res.status(400).json({ message: "No rows provided." });
   }
-  const result = db.importCustomers(rows);
+  const result = await db.importCustomers(rows);
   writeAudit(req, "import", "customers", "bulk", { rows: rows.length, ...result });
   return res.json(result);
 });
 
-app.post("/api/import/receipts", requirePermission("import_data"), (req, res) => {
+app.post("/api/import/receipts", requirePermission("import_data"), async (req, res) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
   const overrideReason = String(req.body?.overrideReason || "").trim();
   if (!rows.length) {
     return res.status(400).json({ message: "No rows provided." });
   }
-  const hasClosedMonthRows = rows.some((row) => db.isMonthClosed(String(row?.date || "").trim()));
+  const closedCheck = await Promise.all(rows.map((row) => db.isMonthClosed(String(row?.date || "").trim())));
+  const hasClosedMonthRows = closedCheck.some(Boolean);
   if (hasClosedMonthRows && !(req.user?.permissions?.monthly_override && overrideReason)) {
     return res.status(409).json({
       message: "بعض الصفوف تقع ضمن شهر مغلق. يلزم overrideReason مع صلاحية admin.",
     });
   }
-  const result = db.importReceipts(rows);
+  const result = await db.importReceipts(rows);
   writeAudit(req, "import", "receipts", "bulk", { rows: rows.length, overrideReason, ...result });
   return res.json(result);
 });
 
-app.get("/api/system/backup", requirePermission("backups_view"), (req, res) => {
+app.get("/api/system/backup", requirePermission("backups_view"), async (req, res) => {
   try {
-    const snapshot = db.createBackupSnapshot();
+    const snapshot = await db.createBackupSnapshot();
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="masan-backup-${stamp}.json"`);
@@ -1782,7 +1757,7 @@ app.get("/api/system/backup", requirePermission("backups_view"), (req, res) => {
   }
 });
 
-app.get("/api/system/backups", requirePermission("backups_view"), (req, res) => {
+app.get("/api/system/backups", requirePermission("backups_view"), async (req, res) => {
   try {
     if (!fs.existsSync(backupsDir)) {
       return res.json([]);
@@ -1806,7 +1781,7 @@ app.get("/api/system/backups", requirePermission("backups_view"), (req, res) => 
   }
 });
 
-app.delete("/api/system/backups/:file", requirePermission("backups_restore"), (req, res) => {
+app.delete("/api/system/backups/:file", requirePermission("backups_restore"), async (req, res) => {
   const fileName = path.basename(String(req.params.file || "").trim());
   if (!fileName || !fileName.endsWith(".json")) {
     return res.status(400).json({ message: "Invalid backup file name." });
@@ -1826,13 +1801,13 @@ app.delete("/api/system/backups/:file", requirePermission("backups_restore"), (r
   }
 });
 
-app.post("/api/system/restore", requirePermission("backups_restore"), (req, res) => {
+app.post("/api/system/restore", requirePermission("backups_restore"), async (req, res) => {
   const snapshot = req.body;
   if (!snapshot || typeof snapshot !== "object") {
     return res.status(400).json({ message: "Backup payload is required." });
   }
   try {
-    db.restoreBackupSnapshot(snapshot);
+    await db.restoreBackupSnapshot(snapshot);
     writeAudit(req, "restore", "system", "backup", {});
     return res.json({ ok: true });
   } catch (err) {
@@ -1840,7 +1815,7 @@ app.post("/api/system/restore", requirePermission("backups_restore"), (req, res)
   }
 });
 
-app.post("/api/system/restore-file", requirePermission("backups_restore"), (req, res) => {
+app.post("/api/system/restore-file", requirePermission("backups_restore"), async (req, res) => {
   const fileName = path.basename(String(req.body?.file || "").trim());
   if (!fileName || !fileName.endsWith(".json")) {
     return res.status(400).json({ message: "Invalid backup file name." });
@@ -1853,7 +1828,7 @@ app.post("/api/system/restore-file", requirePermission("backups_restore"), (req,
   try {
     const text = fs.readFileSync(filePath, "utf-8");
     const snapshot = JSON.parse(text);
-    db.restoreBackupSnapshot(snapshot);
+    await db.restoreBackupSnapshot(snapshot);
     writeAudit(req, "restore", "system", "backup-file", { file: fileName });
     return res.json({ ok: true });
   } catch (err) {
@@ -1862,7 +1837,7 @@ app.post("/api/system/restore-file", requirePermission("backups_restore"), (req,
 });
 
 const backupsDir = path.join(__dirname, "backups");
-const ensureDailyBackup = () => {
+const ensureDailyBackup = async () => {
   try {
     if (!fs.existsSync(backupsDir)) {
       fs.mkdirSync(backupsDir, { recursive: true });
@@ -1870,7 +1845,7 @@ const ensureDailyBackup = () => {
     const day = new Date().toISOString().slice(0, 10);
     const filePath = path.join(backupsDir, `masan-auto-${day}.json`);
     if (!fs.existsSync(filePath)) {
-      const snapshot = db.createBackupSnapshot();
+      const snapshot = await db.createBackupSnapshot();
       fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2), "utf-8");
     }
   } catch (err) {
@@ -1914,15 +1889,12 @@ const sendDailyBackupEmail = async () => {
 setTimeout(sendDailyBackupEmail, 10000);
 setInterval(sendDailyBackupEmail, 24 * 60 * 60 * 1000);
 
-app.get("/health", (req, res) => {
+app.get("/health", async (req, res) => {
   res.json({ ok: true });
 });
-app.listen(PORT, '0.0.0.0', () => {
-  // ...existing code...
+
 // منع إضافة أي بند جديد يحمل رقم الفاتورة 1234568 نهائياً
 const FORBIDDEN_INVOICE = 1234568;
-
-// دالة وسيطة تمنع الإدخال
 function forbidInvoiceMiddleware(req, res, next) {
   const invoiceNo = req.body?.invoice_no || req.body?.invoiceNo || req.body?.invoice;
   if (Number(invoiceNo) === FORBIDDEN_INVOICE) {
@@ -1930,8 +1902,16 @@ function forbidInvoiceMiddleware(req, res, next) {
   }
   next();
 }
-
-// تطبيق المنع على كل مسارات إضافة أو تعديل الإيصالات
 app.post("/api/receipts", forbidInvoiceMiddleware);
 app.put("/api/receipts/:id", forbidInvoiceMiddleware);
-});
+
+db.initDb()
+  .then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("Failed to initialize database:", err.message);
+    process.exit(1);
+  });
