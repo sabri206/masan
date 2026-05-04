@@ -1975,6 +1975,9 @@ const setActiveScreen = (screenId) => {
   navButtons.forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.screen === screenId);
   });
+  if (screenId === "customers-list") {
+    loadCustomers();
+  }
   if (screenId === "rmb-balance") {
     loadRmbBalances();
     loadRmbTransfers();
