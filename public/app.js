@@ -1978,6 +1978,16 @@ const setActiveScreen = (screenId) => {
   if (screenId === "customers-list") {
     loadCustomers();
   }
+  if (screenId === "backup") {
+    loadServerBackups();
+  }
+  if (screenId === "ops") {
+    loadLocks();
+    loadAuditLogs();
+    loadAlertsCenter();
+    loadMonthlyCloses();
+    loadMonthlyKpis();
+  }
   if (screenId === "rmb-balance") {
     loadRmbBalances();
     loadRmbTransfers();
